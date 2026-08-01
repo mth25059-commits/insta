@@ -21,7 +21,7 @@ from storage import database
 
 logger = logging.getLogger("eve.drive")
 
-FOLDER_NAME = "EveBrain"
+FOLDER_NAME = getattr(config, "GDRIVE_FOLDER_NAME", "") or "EveBrain"
 DB_NAME = "eve.db"
 
 _service: Any = None
@@ -62,6 +62,7 @@ def folder_id() -> Optional[str]:
             q=("mimeType='application/vnd.google-apps.folder' and trashed=false"
                f" and name='{FOLDER_NAME}'"),
             fields="files(id,name)", pageSize=10,
+            supportsAllDrives=True, includeItemsFromAllDrives=True,
         ).execute()
         files = res.get("files", [])
         if files:
@@ -70,7 +71,8 @@ def folder_id() -> Optional[str]:
             return _folder_id
         meta = {"name": FOLDER_NAME,
                 "mimeType": "application/vnd.google-apps.folder"}
-        created = _svc().files().create(body=meta, fields="id").execute()
+        created = _svc().files().create(body=meta, fields="id",
+                                        supportsAllDrives=True).execute()
         _folder_id = created["id"]
         logger.info("[DRIVE] naya folder banaya: %s", _folder_id)
         return _folder_id
@@ -86,6 +88,7 @@ def _find_db() -> Optional[str]:
     res = _svc().files().list(
         q=f"'{fid}' in parents and name='{DB_NAME}' and trashed=false",
         fields="files(id,name,modifiedTime)", pageSize=5,
+        supportsAllDrives=True, includeItemsFromAllDrives=True,
     ).execute()
     files = res.get("files", [])
     return files[0]["id"] if files else None
@@ -130,14 +133,15 @@ def push() -> bool:
         media = MediaFileUpload(str(path), resumable=False)
         file_id = _find_db()
         if file_id:
-            _svc().files().update(fileId=file_id, media_body=media).execute()
+            _svc().files().update(fileId=file_id, media_body=media,
+                                  supportsAllDrives=True).execute()
         else:
             fid = folder_id()
             if not fid:
                 return False
             _svc().files().create(
                 body={"name": DB_NAME, "parents": [fid]},
-                media_body=media, fields="id",
+                media_body=media, fields="id", supportsAllDrives=True,
             ).execute()
         logger.info("[DRIVE] ✓ brain backup ho gaya")
         return True
@@ -174,6 +178,6 @@ def status() -> str:
     if not available():
         return "Drive: OFF (service account JSON nahi mila)"
     fid = folder_id() or "—"
-    return (f"Drive: ON\nFolder: {fid}\n"
+    return (f"Drive: ON\nFolder: {FOLDER_NAME} ({fid})\n"
             f"Auto-backup: har {config.DRIVE_SYNC_INTERVAL}s\n"
             f"Last check: {time.strftime('%H:%M:%S')}")
