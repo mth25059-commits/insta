@@ -199,8 +199,8 @@ def step_ai(cfg: dict) -> None:
     cfg["GROQ_API_KEYS"] = input("Groq keys (comma se, baad me TG panel se bhi daal sakte ho): ").strip()
     cfg["ANTHROPIC_API_KEY"] = input("Anthropic key (optional): ").strip()
     cfg["AGENTROUTER_KEY"] = input("AgentRouter key (optional): ").strip()
-    cfg["AGENTROUTER_BASE"] = "https://api.agentrouter.org/v1"
-    cfg["AGENTROUTER_MODEL"] = "claude-opus-4-6"
+    cfg["AGENTROUTER_BASE"] = "https://agentrouter.org/v1"
+    cfg["AGENTROUTER_MODEL"] = "claude-opus-4-8"
 
 
 # ----------------------------------------------------------------- main
