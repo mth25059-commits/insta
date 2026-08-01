@@ -338,7 +338,13 @@ def handle_callback(chat_id: int, data: str, user_id: Any,
     if data == "m:force_start":
         runtime_state.force_start()
         show("🚀 FORCE START — sab system ON, open reply mode.\n\n" + status_text(),
-             main_menu()); return
+             main_menu())
+        try:
+            from workers import ig_worker
+            send(chat_id, ig_worker.gc_report_text(), [_back()])
+        except Exception as e:
+            send(chat_id, f"⚠️ GC report fail: {e}", [_back()])
+        return
     if data == "m:force_stop":
         runtime_state.force_stop()
         show("🛑 FORCE STOP — polling, learning, reply sab band.\n\n" + status_text(),
