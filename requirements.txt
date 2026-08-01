@@ -1,0 +1,5 @@
+requests>=2.31
+instagrapi>=2.1.2
+pillow>=10.2
+google-api-python-client>=2.120
+google-auth>=2.28
