@@ -146,8 +146,17 @@ def push() -> bool:
         logger.info("[DRIVE] ✓ brain backup ho gaya")
         return True
     except Exception as e:
-        logger.warning("[DRIVE] push fail: %s", e)
+        msg = str(e)
+        if "storageQuota" in msg or "storage quota" in msg:
+            logger.warning(
+                "[DRIVE] push fail: service account ka apna storage 0 hai. "
+                "Fix: '%s' folder me khud se ek khali file '%s' upload kar do "
+                "(ya Shared Drive use karo) — uske baad Eve usi file ko update "
+                "karta rahega aur backup chalu ho jayega.", FOLDER_NAME, DB_NAME)
+        else:
+            logger.warning("[DRIVE] push fail: %s", msg)
         return False
+
 
 
 # ------------------------------------------------------- background loop

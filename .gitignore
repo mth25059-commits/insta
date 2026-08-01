@@ -1,0 +1,7 @@
+__pycache__/
+*.pyc
+.env
+*.db
+secrets/*
+!secrets/*.example.json
+session.json

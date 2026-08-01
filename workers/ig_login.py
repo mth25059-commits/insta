@@ -35,12 +35,26 @@ def _read_cookie_file() -> Optional[Dict[str, Any]]:
         data = json.loads(COOKIE_FILE.read_text(encoding="utf-8"))
     except Exception as e:
         raise LoginError(f"{COOKIE_FILE} valid JSON nahi hai: {e}") from e
+
+    # Browser extension export (EditThisCookie / Cookie-Editor) = LIST format
+    if isinstance(data, list):
+        jar: Dict[str, Any] = {}
+        for c in data:
+            if isinstance(c, dict) and c.get("name"):
+                jar[str(c["name"])] = str(c.get("value", ""))
+        if not jar.get("sessionid"):
+            raise LoginError("cookie list me `sessionid` nahi mila.")
+        return {"cookies": jar}
+
+    if not isinstance(data, dict):
+        raise LoginError("ig_cookies.json ka format samajh nahi aaya.")
     data.pop("_readme", None)
     return data
 
 
 def _is_settings_dump(data: Dict[str, Any]) -> bool:
     return "authorization_data" in data or "uuids" in data
+
 
 
 def _client() -> Any:
