@@ -1,14 +1,12 @@
 """
 Eve v7 — humanizer. Reply ka timing insaan jaisa lage.
 
-Rule (user spec):
-    7 word  -> ~3.0s
-    15 word -> ~10.0s
-  => piecewise:  w<=7  : 0.9 + 0.30*w
-                 w<=15 : 3.0 + 0.875*(w-7)
-                 w>15  : 10.0 + 0.15*(w-15)
-
-Clamp: min 1.2s, max 13s.
+Rule: jitna bada sentence utna zyada time, chhota sentence = kam time.
+    3 word  -> ~1.7s
+    7 word  -> ~2.9s
+    15 word -> ~7.9s
+    30 word -> ~14.2s
+Clamp: min 1.2s, max 22s. Har baar thoda random jitter.
 """
 from __future__ import annotations
 
@@ -16,8 +14,14 @@ import random
 import time
 
 MIN_DELAY = 1.2
-MAX_DELAY = 13.0
+MAX_DELAY = 22.0
 JITTER = 0.4
+
+# per-word "typing" speed (sec) — jitna bada sentence, utna zyada time
+WPS_FAST = 0.30      # chhota msg: taez
+WPS_MID = 0.62       # medium
+WPS_SLOW = 0.42      # bahut lamba: thoda speed up (copy-paste feel na aaye)
+READ_BASE = 0.8      # padhne ka time
 
 
 def word_count(text: str) -> int:
@@ -25,14 +29,14 @@ def word_count(text: str) -> int:
 
 
 def delay_for(text: str) -> float:
-    """Kitni der 'type' karna chahiye."""
+    """Kitni der 'type' karna chahiye. Chhota = km time, bada = zyada time."""
     w = word_count(text)
     if w <= 7:
-        d = 0.9 + 0.30 * w
+        d = READ_BASE + WPS_FAST * w
     elif w <= 15:
-        d = 3.0 + 0.875 * (w - 7)
+        d = READ_BASE + WPS_FAST * 7 + WPS_MID * (w - 7)
     else:
-        d = 10.0 + 0.15 * (w - 15)
+        d = READ_BASE + WPS_FAST * 7 + WPS_MID * 8 + WPS_SLOW * (w - 15)
     d += random.uniform(-JITTER, JITTER)
     return round(max(MIN_DELAY, min(d, MAX_DELAY)), 2)
 
