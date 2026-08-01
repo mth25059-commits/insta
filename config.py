@@ -65,4 +65,5 @@ OPENROUTER_API_KEYS = _get("OPENROUTER_API_KEYS")
 # --------------------------------------------------------------- drive
 GOOGLE_SERVICE_ACCOUNT_JSON = _get("GOOGLE_SERVICE_ACCOUNT_JSON")
 GDRIVE_FOLDER_ID = _get("GDRIVE_FOLDER_ID")
+GDRIVE_FOLDER_NAME = _get("GDRIVE_FOLDER_NAME", "EveBrain")
 DRIVE_SYNC_INTERVAL = int(_get("DRIVE_SYNC_INTERVAL", "900") or 900)
