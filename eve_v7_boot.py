@@ -13,7 +13,7 @@ import re
 from typing import Any, Dict, List, Optional
 
 import config
-from intelligence import panel_store, runtime_state, tones
+from intelligence import api_pool, panel_store, runtime_state, tones
 from intelligence import llm_router_v7 as router
 from storage import database, drive_sync, people
 
@@ -34,11 +34,13 @@ ORDER_OK = "malik ki agya sar aankhon par 🙏"
 def boot_v7() -> None:
     database.init_db()
     people.init()
+    api_pool.seed_from_env()        # .env ki keys -> pool (verify off = boot fast)
     if drive_sync.available():
         drive_sync.restore()
         database.init_db()          # restore ke baad schema dobara ensure
         people.init()
         drive_sync.start_background()
+    api_pool.seed_from_env()        # Drive restore ke baad bhi ensure
     logger.info("[BOOT] Eve v7 ready — mode: %s", runtime_state.get_mode())
 
 
