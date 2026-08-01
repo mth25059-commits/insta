@@ -12,7 +12,7 @@ Idea (user spec):
 
 Providers:
   groq         -> https://api.groq.com/openai/v1          (sasta, fast, default)
-  agentrouter  -> https://api.agentrouter.org/v1          (Claude Opus 4.8 yahi se)
+  agentrouter  -> https://agentrouter.org/v1               (Claude Opus 4.8 yahi se)
   anthropic    -> https://api.anthropic.com/v1  (optional, direct claude)
   openrouter   -> https://openrouter.ai/api/v1  (optional backup)
 
@@ -27,9 +27,15 @@ from typing import Any, Dict, List, Optional
 
 import requests
 
+import config
 from intelligence.aihumara_state import _get, _set
 
 logger = logging.getLogger("eve.api")
+
+# Aliyun WAF (agentrouter.org) blocks the default python-requests UA -> HTML challenge
+# page instead of JSON. Always send a browser-like UA.
+UA = ("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 "
+      "(KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36")
 
 DEFAULT_KEY_LIMIT = 2100          # per key request quota, TG se badal sakte ho
 
@@ -44,7 +50,7 @@ PROVIDERS: Dict[str, Dict[str, Any]] = {
     },
     "agentrouter": {
         "label": "AgentRouter (Opus 4.8)",
-        "base": "https://api.agentrouter.org/v1",
+        "base": "https://agentrouter.org/v1",
         "style": "openai",
         "default_model": "claude-opus-4-8",
         "models": ["claude-opus-4-8", "claude-sonnet-4-5", "gpt-5.5"],
@@ -225,7 +231,8 @@ def _raw_call(provider: str, key: str, model: str, messages: List[Dict[str, str]
         r = requests.post(
             f"{meta['base']}/messages",
             headers={"x-api-key": key, "anthropic-version": "2023-06-01",
-                     "content-type": "application/json"},
+                     "content-type": "application/json",
+                     "accept": "application/json", "user-agent": UA},
             json={"model": model, "max_tokens": max_tokens, "temperature": temperature,
                   "system": system or None, "messages": chat},
             timeout=timeout,
@@ -236,14 +243,21 @@ def _raw_call(provider: str, key: str, model: str, messages: List[Dict[str, str]
 
     r = requests.post(
         f"{meta['base']}/chat/completions",
-        headers={"Authorization": f"Bearer {key}", "content-type": "application/json"},
+        headers={"Authorization": f"Bearer {key}", "content-type": "application/json",
+                 "accept": "application/json", "user-agent": UA},
         json={"model": model, "messages": messages,
               "max_tokens": max_tokens, "temperature": temperature},
         timeout=timeout,
     )
     r.raise_for_status()
-    data = r.json()
-    return (data["choices"][0]["message"]["content"] or "").strip()
+    try:
+        data = r.json()
+    except ValueError:
+        raise RuntimeError(f"non-JSON response from {provider} (WAF/HTML?): {r.text[:120]}")
+    try:
+        return (data["choices"][0]["message"]["content"] or "").strip()
+    except (KeyError, IndexError, TypeError):
+        raise RuntimeError(f"bad payload from {provider}: {str(data)[:160]}")
 
 
 def call(provider: str, messages: List[Dict[str, str]], *, model: Optional[str] = None,
@@ -276,3 +290,24 @@ def call(provider: str, messages: List[Dict[str, str]], *, model: Optional[str] 
 
 def has_keys(provider: str) -> bool:
     return bool(_ordered_keys(provider))
+
+
+# ------------------------------------------------------- seed from .env
+
+_ENV_MAP = {
+    "groq": ("GROQ_API_KEYS", "GROQ_API_KEY"),
+    "agentrouter": ("AGENTROUTER_API_KEYS", "AGENTROUTER_API_KEY", "AGENTROUTER_KEY"),
+    "anthropic": ("ANTHROPIC_API_KEYS", "ANTHROPIC_API_KEY"),
+    "openrouter": ("OPENROUTER_API_KEYS", "OPENROUTER_API_KEY"),
+}
+
+
+def seed_from_env(verify: bool = False) -> None:
+    """.env me di gayi keys ko pool me daal do (boot pe). Comma se multiple."""
+    for provider, names in _ENV_MAP.items():
+        for name in names:
+            raw = getattr(config, name, "") or ""
+            for key in [k.strip() for k in raw.split(",") if k.strip()]:
+                res = add_key(provider, key, verify=verify)
+                if res["ok"]:
+                    logger.info("[API] env seed -> %s %s", provider, mask(key))
