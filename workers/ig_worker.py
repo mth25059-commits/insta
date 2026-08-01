@@ -214,6 +214,48 @@ def _fetch_new() -> List[Dict[str, Any]]:
     return out
 
 
+
+# ----------------------------------------------------- GC live snapshot
+
+
+def gc_snapshot(max_threads: int = 10) -> List[Dict[str, Any]]:
+    """
+    Live IG se GC list + members nikalta hai (FORCE START report ke liye).
+    Return: [{"thread_id","title","member_count","members":[...]}]
+    """
+    cl = login()
+    out: List[Dict[str, Any]] = []
+    for th in cl.direct_threads(amount=max_threads):
+        tid = str(th.id)
+        if not _thread_allowed(tid):
+            continue
+        members = [(getattr(u, "username", "") or "").lower()
+                   for u in (th.users or []) if getattr(u, "username", "")]
+        out.append({
+            "thread_id": tid,
+            "title": th.thread_title or tid,
+            "member_count": len(members),
+            "members": sorted(members),
+        })
+    return out
+
+
+def gc_report_text(max_threads: int = 10) -> str:
+    """FORCE START pe TG panel me bhejne wali report."""
+    try:
+        snaps = gc_snapshot(max_threads)
+    except Exception as e:
+        return f"⚠️ GC report nahi mil payi (IG login/cookies check kar): {e}"
+    if not snaps:
+        return "Koi GC nahi mila — allowed threads / cookies check kar."
+    lines = [f"👥 LIVE GC REPORT ({len(snaps)} chat)"]
+    for s in snaps:
+        names = ", ".join(f"@{m}" for m in s["members"][:25])
+        extra = " …" if s["member_count"] > 25 else ""
+        lines.append(f"\n• {s['title']} — {s['member_count']} member\n  {names}{extra}")
+    return "\n".join(lines)
+
+
 def _already_seen(message_id: str) -> bool:
     with database.get_connection() as conn:
         row = conn.execute(
