@@ -11,6 +11,7 @@ import random
 import sys
 import threading
 import time
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
@@ -29,6 +30,23 @@ _client: Any = None
 
 # thread_id -> last DirectMessage object (reply/slide karne ke liye)
 _last_msg_obj: Dict[str, Any] = {}
+
+# Is waqt se pehle ke messages = purana backlog -> sirf seekho, reply mat karo.
+_live_since: datetime = datetime.now(timezone.utc)
+
+
+def mark_live_now() -> None:
+    """START/FORCE START ya worker boot pe call — backlog spam rok deta hai."""
+    global _live_since
+    _live_since = datetime.now(timezone.utc)
+
+
+def _is_backlog(ts: Any) -> bool:
+    if not isinstance(ts, datetime):
+        return False
+    if ts.tzinfo is None:
+        ts = ts.replace(tzinfo=timezone.utc)
+    return ts < _live_since
 
 
 # ------------------------------------------------------------- login
@@ -131,6 +149,11 @@ def handle_message(msg: Dict[str, Any]) -> None:
         thread_title=msg.get("title") or None,
     )
 
+    # Purana backlog (bot band tha / abhi boot hua): seekh liya, reply nahi.
+    if _is_backlog(msg.get("ts")):
+        logger.debug("[IG] backlog skip (%s)", msg["id"])
+        return
+
     history = database.recent_messages(thread_id, limit=12)
     new_member = database.is_new_member(thread_id, username)
 
@@ -209,6 +232,7 @@ def _fetch_new() -> List[Dict[str, Any]]:
                 "username": uname,
                 "user_id": str(m.user_id),
                 "obj": m,
+                "ts": getattr(m, "timestamp", None),
                 "text": m.text,
             })
     return out
@@ -268,12 +292,19 @@ def run(stop_event: Optional[threading.Event] = None) -> None:
     ev = stop_event or _stop
     logger.info("[IG] worker start — run mode: %s", runtime_state.get_mode())
     backoff = config.IG_POLL_SECONDS
+    mark_live_now()
+    was_dead = runtime_state.is_dead()
 
     while not ev.is_set():
         # FORCE STOP: poll bhi mat kar, bas idle rehkar TG panel ka wait.
         if runtime_state.is_dead():
+            was_dead = True
             ev.wait(5)
             continue
+        if was_dead:
+            # Abhi FORCE STOP se wapas aaye — beech ka backlog reply mat kar.
+            mark_live_now()
+            was_dead = False
         try:
             for msg in _fetch_new():
                 if ev.is_set() or runtime_state.is_dead():
