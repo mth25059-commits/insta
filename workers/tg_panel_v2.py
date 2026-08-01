@@ -341,6 +341,7 @@ def handle_callback(chat_id: int, data: str, user_id: Any,
              main_menu())
         try:
             from workers import ig_worker
+            ig_worker.mark_live_now()      # purane msg ka backlog reply na ho
             send(chat_id, ig_worker.gc_report_text(), [_back()])
         except Exception as e:
             send(chat_id, f"⚠️ GC report fail: {e}", [_back()])
