@@ -34,6 +34,9 @@ _last_msg_obj: Dict[str, Any] = {}
 # Is waqt se pehle ke messages = purana backlog -> sirf seekho, reply mat karo.
 _live_since: datetime = datetime.now(timezone.utc)
 
+# TG alert throttle
+_last_alert: float = 0.0
+
 
 def mark_live_now() -> None:
     """START/FORCE START ya worker boot pe call — backlog spam rok deta hai."""
@@ -59,7 +62,34 @@ def login() -> Any:
         return _client
     from workers import ig_login
     _client = ig_login.login()
+    # apna username/pk yaad rakho — self-message skip aur "bot ko reply" detect
+    # dono isi se chalte hain.
+    try:
+        me = _client.account_info()
+        if getattr(me, "username", ""):
+            config.IG_USERNAME = me.username.lower()
+    except Exception:
+        pass
     return _client
+
+
+def _alert(text: str) -> None:
+    """Zaroori problem TG pe bhej do (throttle: 10 min me ek baar)."""
+    global _last_alert
+    now = time.time()
+    if now - _last_alert < 600:
+        return
+    _last_alert = now
+    try:
+        import requests
+        from intelligence.aihumara_state import get_tg_admin_id
+        ids = [i for i in (list(config.TG_ADMIN_IDS or []) + [get_tg_admin_id()]) if i]
+        for cid in set(str(i) for i in ids):
+            requests.post(
+                f"https://api.telegram.org/bot{config.TG_BOT_TOKEN}/sendMessage",
+                json={"chat_id": cid, "text": text}, timeout=20)
+    except Exception:
+        logger.debug("[IG] alert bhejne me dikkat")
 
 
 # ------------------------------------------------------- send helpers
@@ -165,6 +195,7 @@ def handle_message(msg: Dict[str, Any]) -> None:
         recent_texts=[h["text"] for h in history if h.get("text")],
         recent_usernames=[h["ig_username"] for h in history],
         is_new_member=new_member,
+        replied_to_bot=bool(msg.get("replied_to_bot")),
     )
 
     # START mode: bina mention ke bhi reply, aur cost bachane ke liye groq.
@@ -197,6 +228,8 @@ def handle_message(msg: Dict[str, Any]) -> None:
         send_reply(thread_id, reply.strip().strip('"'), reply_to)
     else:
         logger.error("[IG] koi model reply nahi de paya — keys check kar")
+        _alert("⚠️ Eve: koi AI model reply nahi de paya (saari API keys fail).\n"
+               "Panel → API KEYS me key check kar / dusre provider ki key add kar.")
 
 
 # --------------------------------------------------------------- poll
@@ -210,6 +243,7 @@ def _fetch_new() -> List[Dict[str, Any]]:
     cl = login()
     out: List[Dict[str, Any]] = []
     me = (config.IG_USERNAME or "").lower()
+    my_pk = str(getattr(cl, "user_id", "") or "")
 
     threads = cl.direct_threads(amount=config.IG_MAX_THREADS)
     for th in threads:
@@ -218,13 +252,25 @@ def _fetch_new() -> List[Dict[str, Any]]:
             continue
         by_id = {str(u.pk): u for u in (th.users or [])}
         title = th.thread_title or ""
+        # Pehli baar thread dikha -> saare current members "purane" mark.
+        database.seed_thread_members(
+            tid, [(getattr(u, "username", "") or "") for u in (th.users or [])])
         for m in reversed(th.messages or []):
             if getattr(m, "item_type", "text") != "text" or not getattr(m, "text", ""):
                 continue
             user = by_id.get(str(m.user_id))
             uname = (getattr(user, "username", "") or "").lower()
-            if not uname or uname == me:
+            if not uname or uname == me or (my_pk and str(m.user_id) == my_pk):
                 continue
+            # Kisi ne bot ke message pe slide/reply kiya? = mention jaisa hi.
+            replied_to_bot = False
+            rep = getattr(m, "replied_to_message", None)
+            if rep is not None:
+                r_uid = str(getattr(rep, "user_id", "") or "")
+                r_user = by_id.get(r_uid)
+                r_name = (getattr(r_user, "username", "") or "").lower()
+                replied_to_bot = bool(
+                    (my_pk and r_uid == my_pk) or (me and r_name == me))
             out.append({
                 "id": str(m.id),
                 "thread_id": tid,
@@ -233,6 +279,7 @@ def _fetch_new() -> List[Dict[str, Any]]:
                 "user_id": str(m.user_id),
                 "obj": m,
                 "ts": getattr(m, "timestamp", None),
+                "replied_to_bot": replied_to_bot,
                 "text": m.text,
             })
     return out
