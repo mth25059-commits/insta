@@ -28,8 +28,12 @@ def word_count(text: str) -> int:
     return max(1, len((text or "").split()))
 
 
-def delay_for(text: str) -> float:
-    """Kitni der 'type' karna chahiye. Chhota = km time, bada = zyada time."""
+FAST_MAX = 3.5       # mention/slide/admin ka jawab — turant dena hai
+
+
+def delay_for(text: str, fast: bool = False) -> float:
+    """Kitni der 'type' karna chahiye. Chhota = km time, bada = zyada time.
+    fast=True (mention / slide / malik) -> max 3.5s, kabhi cache me nahi fasega."""
     w = word_count(text)
     if w <= 7:
         d = READ_BASE + WPS_FAST * w
@@ -38,11 +42,13 @@ def delay_for(text: str) -> float:
     else:
         d = READ_BASE + WPS_FAST * 7 + WPS_MID * 8 + WPS_SLOW * (w - 15)
     d += random.uniform(-JITTER, JITTER)
+    if fast:
+        return round(max(0.8, min(d * 0.45, FAST_MAX)), 2)
     return round(max(MIN_DELAY, min(d, MAX_DELAY)), 2)
 
 
-def sleep_like_human(text: str) -> float:
-    d = delay_for(text)
+def sleep_like_human(text: str, fast: bool = False) -> float:
+    d = delay_for(text, fast=fast)
     time.sleep(d)
     return d
 
