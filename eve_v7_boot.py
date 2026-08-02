@@ -178,6 +178,9 @@ def build_reply_context(*, text: str, username: str, thread_id: str,
         return ctx
 
     ctx["route"] = router.classify(text)
+    # MALIK pe kabhi roast mode nahi
+    if is_admin and ctx["route"] == "roast":
+        ctx["route"] = "banter"
 
     parts = [
         panel_store.admin_block(),
@@ -193,7 +196,22 @@ def build_reply_context(*, text: str, username: str, thread_id: str,
                 parts.append("ZIKR HUA -> " + blk)
     if trigger_tone:
         parts.append(f"TRIGGER TONE (is bande ke liye force): {trigger_tone}")
-    if panel_store.is_admin(username):
-        parts.append("Ye khud MALIK hai — izzat se baat kar.")
+    if is_admin:
+        parts.append(
+            "YE KHUD MALIK HAI. Iski kabhi bezzati, gaali ya roast mat kar — "
+            "chahe wo khud tujhe gaali de, tu hass ke jhel le aur pyaar se "
+            "jawab de. Iska order turant maan. Iske saamne dusron ko roast "
+            "karna allowed hai, ise nahi.")
+    if ctx["route"] == "roast":
+        parts.append(
+            "ROAST CRAFT: uski hi kahi hui baat/uski aadat pakad ke roast kar — "
+            "ek sharp punchline, 1-2 line max. Ratti-ratti maa-behen spam mat "
+            "kar, wo bachkana lagta hai. Callback maar (pehle jo bola tha usi "
+            "pe taana). Jo bola gaya wahi samajh ke jawab de.")
+    parts.append(
+        "SOCH KE BOL: jo message aaya use dhyan se padh, usi ka jawab de. "
+        "Topic se bahar utpatang, random ya copy-paste line mat bol. Agar "
+        "samajh na aaye to chhota sa ulta sawaal pooch (jaise 'kya matlab?'), "
+        "bakwas mat likh.")
     ctx["system_extra"] = "\n".join(p for p in parts if p)
     return ctx
