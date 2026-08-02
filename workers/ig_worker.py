@@ -162,13 +162,40 @@ def send_reply(thread_id: str, text: str, reply_to: Any = None,
 
 def _prompt_for(ctx: Dict[str, Any], username: str, text: str,
                 history: List[Dict[str, Any]]) -> str:
-    lines = [f"{h['ig_username']}: {h['text']}" for h in history if h.get("text")]
-    convo = "\n".join(lines[-10:])
+    """Model ko poora scene do — kaun bol raha hai, pehle kya hua, bot ne
+    kya-kya bola (taaki repeat na kare), aur exactly kya karna hai."""
+    lines = []
+    for h in history[-12:]:
+        if not h.get("text"):
+            continue
+        who = "MAIN (Eve)" if h.get("is_bot") else f"@{h['ig_username']}"
+        lines.append(f"{who}: {h['text']}")
+    convo = "\n".join(lines) or "(abhi tak kuch nahi)"
+
+    my_last = [h["text"] for h in history if h.get("is_bot") and h.get("text")][-3:]
+    dont_repeat = ("\nMAINE ABHI YE BOLA HAI (inhe dobara mat bolo, na hi inka "
+                   "jaisa): " + " | ".join(my_last)) if my_last else ""
+
+    if ctx.get("route") in ("facts", "debate") or router.is_question(text):
+        job = ("Ye sawaal/baat serious hai — pehle dimaag laga, phir SEEDHA "
+               "jawab de. Ghuma ke ya 'pata nahi' mat bol. Jawab sahi ho, "
+               "chhota ho (1-3 line), aur GC ki bhasha me ho.")
+    else:
+        job = ("Casual GC baat hai — samajh ke natural reply de. Line pakad, "
+               "usi topic pe bol. Random ya generic (\'haha\', \'sahi hai\') "
+               "mat thok, kuch naya add kar. 1-2 line bas.")
+
+    who_line = f"ABHI @{username} ne bola: {text}"
+    if ctx.get("is_admin"):
+        who_line += "  <-- ye MALIK hai"
+
     return (
-        f"GROUP CHAT (purane messages):\n{convo}\n\n"
-        f"ABHI @{username} ne bola: {text}\n\n"
-        "Isi ka reply de. Chhota rakh (1-2 line), GC ki bhasha me, "
-        "AI jaisa bilkul mat lag."
+        f"GROUP CHAT (naye se purana neeche-upar, sabse neeche latest):\n{convo}\n"
+        f"{dont_repeat}\n\n{who_line}\n\n"
+        f"KAAM: {job}\n"
+        "Rules: insaan jaisa likh, chhote akshar, thoda typo chalega, "
+        "AI/assistant jaisa bilkul mat lag, apne aap ko bot mat bol, "
+        "emoji zyada se zyada ek."
     )
 
 
@@ -243,15 +270,18 @@ def handle_message(msg: Dict[str, Any]) -> None:
         return
 
     route = ctx.get("route") or "banter"
-    if open_mode and ctx["reason"] == "open_mode":
+    if open_mode and ctx["reason"] == "open_mode" and route not in ("facts", "debate"):
         route = "banter"        # casual bakchodi = sasta model
 
     system = ctx["system_extra"]
+    # sawal/bahas me kam creativity (sahi jawab), bakchodi me zyada masti
+    smart = route in ("facts", "debate", "help")
     reply = router.chat(
         route,
         system,
         _prompt_for(ctx, username, text, history),
-        max_tokens=260,
+        max_tokens=320 if smart else 220,
+        temperature=0.55 if smart else 0.95,
     )
     if reply:
         send_reply(thread_id, reply.strip().strip('"'), reply_to, fast=direct)
