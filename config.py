@@ -40,6 +40,7 @@ SESSION_PATH = _get("IG_SESSION_PATH", str(BASE_DIR / "ig_session.json"))
 
 # ------------------------------------------------------------ telegram
 TG_BOT_TOKEN = _get("TG_BOT_TOKEN")
+TG_ADMIN_IDS = [x.strip() for x in _get("TG_ADMIN_IDS").replace(" ", ",").split(",") if x.strip()]
 
 # ----------------------------------------------------------- instagram
 IG_USERNAME = _get("IG_USERNAME")
