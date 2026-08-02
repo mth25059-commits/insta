@@ -89,6 +89,13 @@ def get(username: str) -> Dict[str, Any]:
     return dict(row) if row else {}
 
 
+def msg_count(username: str) -> int:
+    try:
+        return int(get(username).get("msg_count") or 0)
+    except Exception:
+        return 0
+
+
 def all_people(limit: int = 200) -> List[Dict[str, Any]]:
     with get_connection() as conn:
         rows = conn.execute(
