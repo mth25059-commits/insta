@@ -212,3 +212,15 @@ def is_new_member(thread_id: str, ig_username: str) -> bool:
             (tid, u),
         )
         return seeded and cur.rowcount > 0
+
+
+def was_bot_text(thread_id: str, text: str) -> bool:
+    """Kya ye exact line bot ne is thread me bheji thi? (slide detect fallback)"""
+    if not text:
+        return False
+    with get_connection() as c:
+        row = c.execute(
+            "SELECT 1 FROM MESSAGES WHERE thread_id = ? AND is_bot = 1 "
+            "AND lower(text) = ? LIMIT 1", (str(thread_id), text.lower())
+        ).fetchone()
+    return bool(row)
