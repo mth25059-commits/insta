@@ -185,6 +185,12 @@ def build_reply_context(*, text: str, username: str, thread_id: str,
         people.profile_block(username),
         _gc_style(recent_texts or []),
     ]
+    # baat me jinka zikr hua, unki bhi memory do -> bot ko context samajh aaye
+    for other in set(re.findall(r"@([A-Za-z0-9._]{3,30})", text or "")):
+        if other.lower() != (username or "").lower():
+            blk = panel_store.memory_block(other)
+            if blk:
+                parts.append("ZIKR HUA -> " + blk)
     if trigger_tone:
         parts.append(f"TRIGGER TONE (is bande ke liye force): {trigger_tone}")
     if panel_store.is_admin(username):
