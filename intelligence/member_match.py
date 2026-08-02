@@ -22,14 +22,27 @@ def normalize(username: str) -> str:
 
 
 def known_usernames(thread_id: Optional[str] = None) -> List[str]:
-    """Jitne bhi log bot ne kabhi dekhe (optionally ek hi GC ke)."""
+    """
+    Jitne bhi log bot ko pata hain: jinhone msg bheja + GC ke saare members
+    (chup rehne wale bhi). Isse memory/trigger add karte waqt "member nahi
+    mila" ka jhol khatam.
+    """
     sql = "SELECT DISTINCT ig_username FROM MESSAGES WHERE ig_username IS NOT NULL"
     args: tuple = ()
     if thread_id:
         sql += " AND thread_id = ?"
         args = (str(thread_id),)
+    sql2 = "SELECT DISTINCT ig_username FROM THREAD_MEMBERS"
+    args2: tuple = ()
+    if thread_id:
+        sql2 += " WHERE thread_id = ?"
+        args2 = (str(thread_id),)
     with get_connection() as conn:
         rows = conn.execute(sql, args).fetchall()
+        try:
+            rows += conn.execute(sql2, args2).fetchall()
+        except Exception:
+            pass
     return sorted({(r["ig_username"] or "").lower() for r in rows if r["ig_username"]})
 
 
