@@ -24,13 +24,29 @@ _ROAST = re.compile(
     r"loda|jhaat|teri)\b", re.I)
 
 
+_QUESTION = re.compile(
+    r"(\?|\b(kya|kaise|kaisay|kyu|kyun|kyo|kab|kaun|kahan|kitna|kitne|batao|"
+    r"bata\s|samjha|explain|matlab|meaning|how|why|what|when|who|where)\b)", re.I)
+_FACTUAL = re.compile(
+    r"\b(kitna|kitne|kab|kaun sa|price|rate|score|match|result|year|saal|"
+    r"population|capital|formula|code|error|padhai|exam|syllabus)\b", re.I)
+
+
 def classify(text: str) -> str:
+    """Kya poochha gaya hai — usi hisaab se dimaag chuno."""
     t = text or ""
     if _DEBATE.search(t) or len(t.split()) > 35:
         return "debate"
     if _ROAST.search(t):
         return "roast"
+    # sacha sawal (sirf gaali nahi) -> smart model, taaki bewakoofi na bole
+    if _QUESTION.search(t) and (_FACTUAL.search(t) or len(t.split()) >= 4):
+        return "facts"
     return "banter"
+
+
+def is_question(text: str) -> bool:
+    return bool(_QUESTION.search(text or ""))
 
 
 def chat(task: str, system: str, prompt: str, *, max_tokens: int = 300,
