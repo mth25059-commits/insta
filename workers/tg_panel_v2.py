@@ -559,15 +559,44 @@ def handle_pending(chat_id: int, text: str) -> bool:
 
     if action == "mem_add":
         _pending.pop(chat_id, None)
-        parts = [x.strip() for x in text.split("|")]
-        if not parts or not parts[0]:
-            send(chat_id, "Format galat. `@username | naam | boy/girl | note`")
+        # `|`, `,` ya sirf space — teeno chalenge.
+        raw = text.strip()
+        if "|" in raw:
+            parts = [x.strip() for x in raw.split("|")]
+        elif "," in raw:
+            parts = [x.strip() for x in raw.split(",")]
+        else:
+            parts = raw.split(None, 3)
+        parts = [p for p in parts if p]
+        if not parts:
+            send(chat_id, "Format: `@username | naam | boy/girl | note`")
             return True
-        panel_store.set_member(parts[0],
+        res = member_match.resolve(parts[0])
+        if not res.get("found"):
+            sug = res.get("suggestions") or []
+            send(chat_id, "❌ Ye member nahi mila." +
+                 ("\nShayad: " + ", ".join("@" + s for s in sug) if sug else "") +
+                 "\nSahi username ke saath dobara bhej.",
+                 [[_btn("➕ DOBARA", "mem:add")], _back()])
+            return True
+        uname = res["username"]
+        gender = ""
+        note_from = 2
+        if len(parts) > 2 and parts[2].lower() in ("boy", "girl", "male", "female", "m", "f"):
+            gender = parts[2].lower()
+            note_from = 3
+        note = " ".join(parts[note_from:]).strip() if len(parts) > note_from else ""
+        panel_store.set_member(uname,
                                name=parts[1] if len(parts) > 1 else "",
-                               gender=parts[2] if len(parts) > 2 else "",
-                               note=parts[3] if len(parts) > 3 else "")
-        send(chat_id, "🧠 Memory save.", [[_btn("➕ AUR ADD", "mem:add")], _back()])
+                               gender=gender,
+                               note=note)
+        saved = panel_store.member(uname)
+        send(chat_id,
+             f"🧠 Memory save → @{uname}\n"
+             f"naam: {saved.get('name') or '—'}\n"
+             f"gender: {saved.get('gender') or '—'}\n"
+             f"note: {saved.get('note') or '—'}",
+             [[_btn("➕ AUR ADD", "mem:add")], _back()])
         return True
 
     if action == "nick_add":
