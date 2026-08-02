@@ -159,7 +159,9 @@ def build_reply_context(*, text: str, username: str, thread_id: str,
         ctx.update(should_reply=True, reason="trigger")
     elif mentioned:
         ctx.update(should_reply=True, reason="mention")
-    elif tones.fire_on() or runtime_state.open_reply():
+    elif runtime_state.open_reply() and tones.fire_on():
+        ctx.update(should_reply=True, reason="open_mode")
+    elif runtime_state.open_reply():
         ctx.update(should_reply=True, reason="open_mode")
 
     if not ctx["should_reply"]:
