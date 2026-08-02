@@ -323,13 +323,19 @@ def _fetch_new() -> List[Dict[str, Any]]:
                 continue
             # Kisi ne bot ke message pe slide/reply kiya? = mention jaisa hi.
             replied_to_bot = False
-            rep = getattr(m, "replied_to_message", None)
+            rep = (getattr(m, "replied_to_message", None)
+                   or getattr(m, "reply", None)
+                   or getattr(m, "replied_to", None))
             if rep is not None:
                 r_uid = str(getattr(rep, "user_id", "") or "")
                 r_user = by_id.get(r_uid)
                 r_name = (getattr(r_user, "username", "") or "").lower()
+                r_text = str(getattr(rep, "text", "") or "").strip().lower()
                 replied_to_bot = bool(
                     (my_pk and r_uid == my_pk) or (me and r_name == me))
+                if not replied_to_bot and r_text:
+                    # id/user na mile to bhi: kya wo line bot ne hi bheji thi?
+                    replied_to_bot = database.was_bot_text(tid, r_text)
             out.append({
                 "id": str(m.id),
                 "thread_id": tid,
