@@ -89,7 +89,8 @@ def build_reply_context(*, text: str, username: str, thread_id: str,
                         bot_username: str = "",
                         recent_texts: Optional[List[str]] = None,
                         recent_usernames: Optional[List[str]] = None,
-                        is_new_member: bool = False) -> Dict[str, Any]:
+                        is_new_member: bool = False,
+                        replied_to_bot: bool = False) -> Dict[str, Any]:
     """
     Return:
       should_reply, reason, route, canned_reply, system_extra
@@ -97,7 +98,8 @@ def build_reply_context(*, text: str, username: str, thread_id: str,
     text = text or ""
     is_admin = panel_store.is_admin(username)
     trigger_tone = panel_store.trigger_for(username)
-    mentioned = _mentioned(text, bot_username or config.IG_USERNAME)
+    # @mention, nickname, ya bot ke message pe slide/reply — teeno mention hi hain.
+    mentioned = replied_to_bot or _mentioned(text, bot_username or config.IG_USERNAME)
 
     ctx: Dict[str, Any] = {
         "should_reply": False,
@@ -163,8 +165,12 @@ def build_reply_context(*, text: str, username: str, thread_id: str,
     if not ctx["should_reply"]:
         return ctx
 
-    # naya banda -> intro poochho
-    if is_new_member and ctx["reason"] != "trigger":
+    # Sach me naya banda -> intro poochho. Admin, jaana-pehchana banda,
+    # panel memory wala banda, ya bot ke msg pe reply karne wala — inse
+    # kabhi intro mat maang.
+    known = bool(panel_store.member(username)) or people.msg_count(username) > 1
+    if (is_new_member and not is_admin and not trigger_tone
+            and not replied_to_bot and not known):
         ctx["canned_reply"] = f"@{username} naya lag raha hai — intro de bhai?"
         ctx["reason"] = "new_member"
         return ctx
