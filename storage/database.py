@@ -53,6 +53,12 @@ CREATE TABLE IF NOT EXISTS THREAD_MEMBERS (
     first_seen  TEXT NOT NULL DEFAULT (datetime('now')),
     PRIMARY KEY (thread_id, ig_username)
 );
+
+-- Kis thread ka member-list ek baar seed ho chuka hai (purane log = purane).
+CREATE TABLE IF NOT EXISTS THREAD_SEEDED (
+    thread_id  TEXT PRIMARY KEY,
+    seeded_at  TEXT NOT NULL DEFAULT (datetime('now'))
+);
 """
 
 
@@ -144,15 +150,65 @@ def recent_messages(thread_id: str, limit: int = 12) -> List[Dict[str, Any]]:
     return [dict(r) for r in reversed(rows)]
 
 
+def seed_thread_members(thread_id: str, usernames: List[str]) -> bool:
+    """
+    Thread pehli baar dikhne pe uske SAARE current members ko 'purana' mark
+    karo. Isse 104 purane log ko bot 'naya banda' samajh ke intro nahi maangega.
+    Sirf iske BAAD jo naya join kare, wahi new member count hoga.
+    """
+    tid = str(thread_id)
+    if not tid:
+        return False
+    with get_connection() as conn:
+        row = conn.execute(
+            "SELECT 1 FROM THREAD_SEEDED WHERE thread_id = ?", (tid,)
+        ).fetchone()
+        if row is not None:
+            return False
+        conn.executemany(
+            "INSERT OR IGNORE INTO THREAD_MEMBERS (thread_id, ig_username)"
+            " VALUES (?, ?)",
+            [(tid, (u or "").lstrip("@").lower()) for u in (usernames or []) if u],
+        )
+        conn.execute("INSERT OR IGNORE INTO THREAD_SEEDED (thread_id) VALUES (?)",
+                     (tid,))
+    return True
+
+
+def thread_seeded(thread_id: str) -> bool:
+    with get_connection() as conn:
+        return conn.execute(
+            "SELECT 1 FROM THREAD_SEEDED WHERE thread_id = ?", (str(thread_id),)
+        ).fetchone() is not None
+
+
+def thread_member_usernames(thread_id: Optional[str] = None) -> List[str]:
+    sql = "SELECT DISTINCT ig_username FROM THREAD_MEMBERS"
+    args: tuple = ()
+    if thread_id:
+        sql += " WHERE thread_id = ?"
+        args = (str(thread_id),)
+    with get_connection() as conn:
+        rows = conn.execute(sql, args).fetchall()
+    return [(r["ig_username"] or "").lower() for r in rows if r["ig_username"]]
+
+
 def is_new_member(thread_id: str, ig_username: str) -> bool:
-    """Pehli baar dikha is thread me? True sirf ek hi baar aayega."""
+    """
+    True sirf tab jab thread ka member-list pehle se seed ho chuka ho aur ye
+    banda usme na ho — matlab sach me naya joiner.
+    """
     u = (ig_username or "").lstrip("@").lower()
     if not u or not thread_id:
         return False
+    tid = str(thread_id)
     with get_connection() as conn:
+        seeded = conn.execute(
+            "SELECT 1 FROM THREAD_SEEDED WHERE thread_id = ?", (tid,)
+        ).fetchone() is not None
         cur = conn.execute(
             "INSERT OR IGNORE INTO THREAD_MEMBERS (thread_id, ig_username)"
             " VALUES (?, ?)",
-            (str(thread_id), u),
+            (tid, u),
         )
-        return cur.rowcount > 0
+        return seeded and cur.rowcount > 0
