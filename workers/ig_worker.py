@@ -92,6 +92,25 @@ def _alert(text: str) -> None:
         logger.debug("[IG] alert bhejne me dikkat")
 
 
+# --------------------------------------------------- open-mode throttle
+
+# START mode me bot har ek msg pe nahi bolega — GC me spam + IG block se bachne
+# ke liye per-thread cooldown. Mention / slide / trigger / malik pe ye lagu nahi.
+OPEN_COOLDOWN = 25.0        # itne sec me ek se zyada open-mode reply nahi
+OPEN_CHANCE = 0.55          # cooldown ke baad bhi har baar nahi bolega
+_last_open: Dict[str, float] = {}
+
+
+def _open_allowed(thread_id: str) -> bool:
+    now = time.time()
+    if now - _last_open.get(thread_id, 0.0) < OPEN_COOLDOWN:
+        return False
+    if random.random() > OPEN_CHANCE:
+        return False
+    _last_open[thread_id] = now
+    return True
+
+
 # ------------------------------------------------------- send helpers
 
 
@@ -109,7 +128,8 @@ def _send_one(cl: Any, thread_id: str, text: str, reply_to: Any = None) -> None:
     cl.direct_send(text, thread_ids=[int(thread_id)])
 
 
-def send_reply(thread_id: str, text: str, reply_to: Any = None) -> bool:
+def send_reply(thread_id: str, text: str, reply_to: Any = None,
+               fast: bool = False) -> bool:
     """
     Human timing: 5 word ~3s, 10 word ~4.5s. Lamba reply 2-3 burst me.
     Har reply us user ke message pe slide (quote) hota hai.
@@ -121,7 +141,7 @@ def send_reply(thread_id: str, text: str, reply_to: Any = None) -> bool:
     sent = False
     for i, part in enumerate(bursts):
         try:
-            humanize.sleep_like_human(part)
+            humanize.sleep_like_human(part, fast=fast and i == 0)
             _send_one(cl, thread_id, part, reply_to if i == 0 else None)
             database.log_message(
                 ig_message_id=f"bot-{thread_id}-{time.time()}-{i}",
@@ -209,8 +229,17 @@ def handle_message(msg: Dict[str, Any]) -> None:
         logger.debug("[IG] skip (%s)", ctx["reason"])
         return
 
+    # Direct baat (mention / nickname / slide / trigger / malik) = hamesha,
+    # aur turant. Baaki open-mode bakchodi throttle hoti hai.
+    direct = ctx["reason"] in ("mention", "trigger", "order", "order_stop",
+                               "order_start", "order_custom", "help",
+                               "helpover", "not_admin", "new_member")
+    if not direct and ctx["reason"] == "open_mode" and not _open_allowed(thread_id):
+        logger.debug("[IG] open-mode throttle skip (%s)", thread_id)
+        return
+
     if ctx.get("canned_reply"):
-        send_reply(thread_id, ctx["canned_reply"], reply_to)
+        send_reply(thread_id, ctx["canned_reply"], reply_to, fast=direct)
         return
 
     route = ctx.get("route") or "banter"
@@ -225,7 +254,7 @@ def handle_message(msg: Dict[str, Any]) -> None:
         max_tokens=260,
     )
     if reply:
-        send_reply(thread_id, reply.strip().strip('"'), reply_to)
+        send_reply(thread_id, reply.strip().strip('"'), reply_to, fast=direct)
     else:
         logger.error("[IG] koi model reply nahi de paya — keys check kar")
         _alert("⚠️ Eve: koi AI model reply nahi de paya (saari API keys fail).\n"
