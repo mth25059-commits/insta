@@ -13,7 +13,8 @@ import re
 from typing import Any, Dict, List, Optional
 
 import config
-from intelligence import api_pool, panel_store, runtime_state, tones
+from intelligence import api_pool, news, panel_store, runtime_state, tones
+from intelligence import user_facts
 from intelligence import llm_router_v7 as router
 from storage import database, drive_sync, people
 
@@ -34,11 +35,13 @@ ORDER_OK = "malik ki agya sar aankhon par 🙏"
 def boot_v7() -> None:
     database.init_db()
     people.init()
+    user_facts.init()
     api_pool.seed_from_env()        # .env ki keys -> pool (verify off = boot fast)
     if drive_sync.available():
         drive_sync.restore()
         database.init_db()          # restore ke baad schema dobara ensure
         people.init()
+        user_facts.init()
         drive_sync.start_background()
     api_pool.seed_from_env()        # Drive restore ke baad bhi ensure
     logger.info("[BOOT] Eve v7 ready — mode: %s", runtime_state.get_mode())
@@ -63,6 +66,10 @@ def on_incoming_message(*, username: str, text: str, thread_id: str,
         people.touch(username, text, ig_user_id)
     except Exception:
         logger.exception("[BOOT] learning fail")
+    try:
+        user_facts.learn(username, text)     # naam / ex / city / pasand yaad
+    except Exception:
+        logger.debug("[BOOT] fact learn fail", exc_info=True)
 
 
 # ------------------------------------------------------------- helpers
@@ -178,6 +185,8 @@ def build_reply_context(*, text: str, username: str, thread_id: str,
         return ctx
 
     ctx["route"] = router.classify(text)
+    if news.is_news_query(text):
+        ctx["route"] = "news"
     # MALIK pe kabhi roast mode nahi
     if is_admin and ctx["route"] == "roast":
         ctx["route"] = "banter"
@@ -185,6 +194,7 @@ def build_reply_context(*, text: str, username: str, thread_id: str,
     parts = [
         panel_store.admin_block(),
         panel_store.memory_block(username),
+        user_facts.block(username),          # jo isne pehle bataya tha
         people.profile_block(username),
         _gc_style(recent_texts or []),
     ]
@@ -194,6 +204,13 @@ def build_reply_context(*, text: str, username: str, thread_id: str,
             blk = panel_store.memory_block(other)
             if blk:
                 parts.append("ZIKR HUA -> " + blk)
+    if ctx["route"] == "news":
+        nb = news.block(text)
+        if nb:
+            parts.append(nb)
+        else:
+            parts.append("NEWS: abhi headlines nahi mil payi — jhooth mat bol, "
+                         "saaf keh de ki abhi khabar nahi mil rahi.")
     if trigger_tone:
         parts.append(f"TRIGGER TONE (is bande ke liye force): {trigger_tone}")
     if is_admin:

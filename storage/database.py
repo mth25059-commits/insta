@@ -224,3 +224,19 @@ def was_bot_text(thread_id: str, text: str) -> bool:
             "AND lower(text) = ? LIMIT 1", (str(thread_id), text.lower())
         ).fetchone()
     return bool(row)
+
+
+def user_messages(thread_id: str, ig_username: str,
+                  limit: int = 8) -> List[Dict[str, Any]]:
+    """Is bande ki is thread me pichli baaten (purani yaad rakhne ke liye)."""
+    u = (ig_username or "").lstrip("@").lower()
+    if not u:
+        return []
+    with get_connection() as conn:
+        rows = conn.execute(
+            "SELECT text, created_at FROM MESSAGES WHERE thread_id = ?"
+            " AND ig_username = ? AND is_bot = 0 AND text <> ''"
+            " ORDER BY id DESC LIMIT ?",
+            (str(thread_id), u, int(limit)),
+        ).fetchall()
+    return [dict(r) for r in reversed(rows)]

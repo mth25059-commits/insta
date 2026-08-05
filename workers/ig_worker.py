@@ -19,7 +19,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 import config
 from eve_v7_boot import build_reply_context, on_incoming_message
-from intelligence import eve_modes, humanize, runtime_state
+from intelligence import eve_modes, humanize, runtime_state, user_facts
 from intelligence import llm_router_v7 as router
 from storage import database, people
 
@@ -161,22 +161,31 @@ def send_reply(thread_id: str, text: str, reply_to: Any = None,
 
 
 def _prompt_for(ctx: Dict[str, Any], username: str, text: str,
-                history: List[Dict[str, Any]]) -> str:
-    """Model ko poora scene do — kaun bol raha hai, pehle kya hua, bot ne
-    kya-kya bola (taaki repeat na kare), aur exactly kya karna hai."""
+                history: List[Dict[str, Any]],
+                user_past: Optional[List[Dict[str, Any]]] = None) -> str:
+    """Model ko poora scene do — kaun bol raha hai, pehle kya-kya hua (lambi
+    yaad), us bande ki apni purani baatein, bot ne kya bola (repeat na ho),
+    aur exactly kya karna hai."""
     lines = []
-    for h in history[-12:]:
+    for h in history[-30:]:
         if not h.get("text"):
             continue
         who = "MAIN (Eve)" if h.get("is_bot") else f"@{h['ig_username']}"
         lines.append(f"{who}: {h['text']}")
     convo = "\n".join(lines) or "(abhi tak kuch nahi)"
 
+    past = ""
+    old = [p.get("text") for p in (user_past or []) if p.get("text")]
+    if old:
+        past = (f"\n@{username} NE PEHLE YE BOLA THA (yaad rakh, isse jod ke "
+                "baat kar, dobara wahi mat poochh):\n"
+                + "\n".join(f"- {t}" for t in old[-8:]) + "\n")
+
     my_last = [h["text"] for h in history if h.get("is_bot") and h.get("text")][-3:]
     dont_repeat = ("\nMAINE ABHI YE BOLA HAI (inhe dobara mat bolo, na hi inka "
                    "jaisa): " + " | ".join(my_last)) if my_last else ""
 
-    if ctx.get("route") in ("facts", "debate") or router.is_question(text):
+    if ctx.get("route") in ("facts", "debate", "news") or router.is_question(text):
         job = ("Ye sawaal/baat serious hai — pehle dimaag laga, phir SEEDHA "
                "jawab de. Ghuma ke ya 'pata nahi' mat bol. Jawab sahi ho, "
                "chhota ho (1-3 line), aur GC ki bhasha me ho.")
@@ -190,13 +199,17 @@ def _prompt_for(ctx: Dict[str, Any], username: str, text: str,
         who_line += "  <-- ye MALIK hai"
 
     return (
-        f"GROUP CHAT (naye se purana neeche-upar, sabse neeche latest):\n{convo}\n"
-        f"{dont_repeat}\n\n{who_line}\n\n"
+        f"GROUP CHAT (upar purana, sabse neeche latest):\n{convo}\n"
+        f"{past}{dont_repeat}\n\n{who_line}\n\n"
         f"KAAM: {job}\n"
+        "YAAD-DAASHT RULE: upar wali baatein tune hi suni hain — jo pehle "
+        "bataya gaya (naam, ex, plan, mood) wo dobara mat poochh aur ulta mat "
+        "samajh. Baat ka silsila pakad ke aage badha.\n"
         "Rules: insaan jaisa likh, chhote akshar, thoda typo chalega, "
         "AI/assistant jaisa bilkul mat lag, apne aap ko bot mat bol, "
         "emoji zyada se zyada ek."
     )
+
 
 
 def handle_message(msg: Dict[str, Any]) -> None:
@@ -231,8 +244,10 @@ def handle_message(msg: Dict[str, Any]) -> None:
         logger.debug("[IG] backlog skip (%s)", msg["id"])
         return
 
-    history = database.recent_messages(thread_id, limit=12)
+    history = database.recent_messages(thread_id, limit=30)
+    user_past = database.user_messages(thread_id, username, limit=8)
     new_member = database.is_new_member(thread_id, username)
+
 
     ctx = build_reply_context(
         text=text,
@@ -270,25 +285,34 @@ def handle_message(msg: Dict[str, Any]) -> None:
         return
 
     route = ctx.get("route") or "banter"
-    if open_mode and ctx["reason"] == "open_mode" and route not in ("facts", "debate"):
+    if (open_mode and ctx["reason"] == "open_mode"
+            and route not in ("facts", "debate", "news")):
         route = "banter"        # casual bakchodi = sasta model
 
     system = ctx["system_extra"]
     # sawal/bahas me kam creativity (sahi jawab), bakchodi me zyada masti
-    smart = route in ("facts", "debate", "help")
+    smart = route in ("facts", "debate", "help", "news")
     reply = router.chat(
-        route,
+        "facts" if route == "news" else route,
         system,
-        _prompt_for(ctx, username, text, history),
+        _prompt_for(ctx, username, text, history, user_past),
         max_tokens=320 if smart else 220,
-        temperature=0.55 if smart else 0.95,
+        temperature=0.5 if smart else 0.95,
     )
     if reply:
-        send_reply(thread_id, reply.strip().strip('"'), reply_to, fast=direct)
+        reply = reply.strip().strip('"')
+        send_reply(thread_id, reply, reply_to, fast=direct)
+        # Reply ke baad background me yaad-daasht update (naam, ex, plan...)
+        try:
+            user_facts.learn_async(
+                username, f"@{username}: {text}\nEve: {reply}")
+        except Exception:
+            logger.debug("[IG] facts learn fail")
     else:
         logger.error("[IG] koi model reply nahi de paya — keys check kar")
         _alert("⚠️ Eve: koi AI model reply nahi de paya (saari API keys fail).\n"
                "Panel → API KEYS me key check kar / dusre provider ki key add kar.")
+
 
 
 # --------------------------------------------------------------- poll
