@@ -58,8 +58,14 @@ ANTHROPIC_API_KEY = _get("ANTHROPIC_API_KEY")
 ANTHROPIC_API_KEYS = _get("ANTHROPIC_API_KEYS")
 AGENTROUTER_KEY = _get("AGENTROUTER_KEY")
 AGENTROUTER_API_KEY = _get("AGENTROUTER_API_KEY")
-AGENTROUTER_BASE = _get("AGENTROUTER_BASE", "https://agentrouter.org/v1")
-AGENTROUTER_MODEL = _get("AGENTROUTER_MODEL", "claude-opus-4-8")
+# AgentRouter — official setting:
+#   ANTHROPIC_AUTH_TOKEN = <api key>
+#   ANTHROPIC_BASE_URL   = https://agentrouter.org
+#   ANTHROPIC_MODEL      = claude-opus-4-8
+# Dono naam chalte hain (AGENTROUTER_* ya ANTHROPIC_*).
+AGENTROUTER_BASE = _get("AGENTROUTER_BASE") or _get("ANTHROPIC_BASE_URL", "https://agentrouter.org")
+AGENTROUTER_MODEL = _get("AGENTROUTER_MODEL") or _get("ANTHROPIC_MODEL", "claude-opus-4-8")
+ANTHROPIC_AUTH_TOKEN = _get("ANTHROPIC_AUTH_TOKEN")
 OPENROUTER_API_KEY = _get("OPENROUTER_API_KEY")
 OPENROUTER_API_KEYS = _get("OPENROUTER_API_KEYS")
 
@@ -68,3 +74,12 @@ GOOGLE_SERVICE_ACCOUNT_JSON = _get("GOOGLE_SERVICE_ACCOUNT_JSON")
 GDRIVE_FOLDER_ID = _get("GDRIVE_FOLDER_ID")
 GDRIVE_FOLDER_NAME = _get("GDRIVE_FOLDER_NAME", "EveBrain")
 DRIVE_SYNC_INTERVAL = int(_get("DRIVE_SYNC_INTERVAL", "900") or 900)
+
+# ------------------------------------------------------------- platform
+# Bot kis jagah chalega: "ig" (Instagram GC) ya "tg" (Telegram group).
+PLATFORM = (_get("PLATFORM", "ig") or "ig").lower()
+# TG chat mode ke liye (control panel wale bot se ALAG bot chahiye)
+TG_CHAT_BOT_TOKEN = _get("TG_CHAT_BOT_TOKEN")
+TG_CHAT_ADMIN_IDS = [x.strip() for x in _get("TG_CHAT_ADMIN_IDS").replace(" ", ",").split(",") if x.strip()]
+TG_CHAT_ALLOWED_GROUPS = [x.strip() for x in _get("TG_CHAT_ALLOWED_GROUPS").replace(" ", ",").split(",") if x.strip()]
+TG_BOT_USERNAME = _get("TG_BOT_USERNAME")
