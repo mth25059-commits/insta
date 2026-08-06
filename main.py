@@ -39,15 +39,18 @@ def _run_tg() -> None:
 
 
 def _run_ig() -> None:
-    from workers import ig_worker
+    if config.PLATFORM == "tg":
+        from workers import tg_chat_worker as chat_worker
+    else:
+        from workers import ig_worker as chat_worker
     while not _stop.is_set():
         try:
-            ig_worker.run(_stop)
+            chat_worker.run(_stop)
             return
         except SystemExit:
             raise
         except Exception:
-            logger.exception("[MAIN] IG worker crash — 30s me restart")
+            logger.exception("[MAIN] chat worker crash — 30s me restart")
             _stop.wait(30)
 
 
@@ -74,7 +77,8 @@ def main() -> None:
     ]
     for t in threads:
         t.start()
-    logger.info("[MAIN] Eve v7 live — TG panel me /claimadmin maar")
+    logger.info("[MAIN] Eve v7 live (%s mode) — TG panel me /claimadmin maar",
+                config.PLATFORM)
 
     try:
         while not _stop.is_set():
