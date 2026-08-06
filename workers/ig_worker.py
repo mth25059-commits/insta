@@ -19,7 +19,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 import config
 from eve_v7_boot import build_reply_context, on_incoming_message
-from intelligence import eve_modes, humanize, runtime_state, user_facts
+from intelligence import (eve_modes, humanize, prompting, runtime_state,
+                          user_facts)
 from intelligence import llm_router_v7 as router
 from storage import database, people
 
@@ -160,58 +161,6 @@ def send_reply(thread_id: str, text: str, reply_to: Any = None,
 # --------------------------------------------------------- reply build
 
 
-def _prompt_for(ctx: Dict[str, Any], username: str, text: str,
-                history: List[Dict[str, Any]],
-                user_past: Optional[List[Dict[str, Any]]] = None) -> str:
-    """Model ko poora scene do — kaun bol raha hai, pehle kya-kya hua (lambi
-    yaad), us bande ki apni purani baatein, bot ne kya bola (repeat na ho),
-    aur exactly kya karna hai."""
-    lines = []
-    for h in history[-30:]:
-        if not h.get("text"):
-            continue
-        who = "MAIN (Eve)" if h.get("is_bot") else f"@{h['ig_username']}"
-        lines.append(f"{who}: {h['text']}")
-    convo = "\n".join(lines) or "(abhi tak kuch nahi)"
-
-    past = ""
-    old = [p.get("text") for p in (user_past or []) if p.get("text")]
-    if old:
-        past = (f"\n@{username} NE PEHLE YE BOLA THA (yaad rakh, isse jod ke "
-                "baat kar, dobara wahi mat poochh):\n"
-                + "\n".join(f"- {t}" for t in old[-8:]) + "\n")
-
-    my_last = [h["text"] for h in history if h.get("is_bot") and h.get("text")][-3:]
-    dont_repeat = ("\nMAINE ABHI YE BOLA HAI (inhe dobara mat bolo, na hi inka "
-                   "jaisa): " + " | ".join(my_last)) if my_last else ""
-
-    if ctx.get("route") in ("facts", "debate", "news") or router.is_question(text):
-        job = ("Ye sawaal/baat serious hai — pehle dimaag laga, phir SEEDHA "
-               "jawab de. Ghuma ke ya 'pata nahi' mat bol. Jawab sahi ho, "
-               "chhota ho (1-3 line), aur GC ki bhasha me ho.")
-    else:
-        job = ("Casual GC baat hai — samajh ke natural reply de. Line pakad, "
-               "usi topic pe bol. Random ya generic (\'haha\', \'sahi hai\') "
-               "mat thok, kuch naya add kar. 1-2 line bas.")
-
-    who_line = f"ABHI @{username} ne bola: {text}"
-    if ctx.get("is_admin"):
-        who_line += "  <-- ye MALIK hai"
-
-    return (
-        f"GROUP CHAT (upar purana, sabse neeche latest):\n{convo}\n"
-        f"{past}{dont_repeat}\n\n{who_line}\n\n"
-        f"KAAM: {job}\n"
-        "YAAD-DAASHT RULE: upar wali baatein tune hi suni hain — jo pehle "
-        "bataya gaya (naam, ex, plan, mood) wo dobara mat poochh aur ulta mat "
-        "samajh. Baat ka silsila pakad ke aage badha.\n"
-        "Rules: insaan jaisa likh, chhote akshar, thoda typo chalega, "
-        "AI/assistant jaisa bilkul mat lag, apne aap ko bot mat bol, "
-        "emoji zyada se zyada ek."
-    )
-
-
-
 def handle_message(msg: Dict[str, Any]) -> None:
     username = msg["username"]
     text = msg["text"]
@@ -231,12 +180,14 @@ def handle_message(msg: Dict[str, Any]) -> None:
         ig_user_id=str(msg.get("user_id") or ""),
         text=text,
     )
+    prev = database.recent_messages(thread_id, limit=4)
     on_incoming_message(
         username=username,
         text=text,
         thread_id=thread_id,
         ig_user_id=str(msg.get("user_id") or ""),
         thread_title=msg.get("title") or None,
+        context=prompting.last_bot_line(prev),
     )
 
     # Purana backlog (bot band tha / abhi boot hua): seekh liya, reply nahi.
@@ -244,8 +195,8 @@ def handle_message(msg: Dict[str, Any]) -> None:
         logger.debug("[IG] backlog skip (%s)", msg["id"])
         return
 
-    history = database.recent_messages(thread_id, limit=30)
-    user_past = database.user_messages(thread_id, username, limit=8)
+    history = database.recent_messages(thread_id, limit=prompting.SUMMARY_LIMIT)
+    user_past = database.user_messages(thread_id, username, limit=prompting.USER_PAST_LIMIT)
     new_member = database.is_new_member(thread_id, username)
 
 
@@ -295,7 +246,9 @@ def handle_message(msg: Dict[str, Any]) -> None:
     reply = router.chat(
         "facts" if route == "news" else route,
         system,
-        _prompt_for(ctx, username, text, history, user_past),
+        prompting.build_prompt(ctx=ctx, username=username, text=text,
+                               history=history, user_past=user_past,
+                               is_question=router.is_question(text)),
         max_tokens=320 if smart else 220,
         temperature=0.5 if smart else 0.95,
     )
@@ -305,7 +258,9 @@ def handle_message(msg: Dict[str, Any]) -> None:
         # Reply ke baad background me yaad-daasht update (naam, ex, plan...)
         try:
             user_facts.learn_async(
-                username, f"@{username}: {text}\nEve: {reply}")
+                username,
+                f"Eve(pehle): {prompting.last_bot_line(history)}\n"
+                f"@{username}: {text}\nEve: {reply}")
         except Exception:
             logger.debug("[IG] facts learn fail")
     else:
