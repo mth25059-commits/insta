@@ -50,7 +50,7 @@ PROVIDERS: Dict[str, Dict[str, Any]] = {
     },
     "agentrouter": {
         "label": "AgentRouter (Opus 4.8)",
-        "base": "https://agentrouter.org/v1",
+        "base": "https://agentrouter.org",
         "style": "openai",
         "default_model": "claude-opus-4-8",
         "models": ["claude-opus-4-8", "claude-sonnet-4-5", "gpt-5.5"],
@@ -77,6 +77,42 @@ _K_CURSOR = "api_key_cursor"  # {provider: index}
 
 
 # ------------------------------------------------------------- storage
+
+# Ye providers pe key add karte waqt live test NAHI hota (WAF/region block ki
+# wajah se sahi key bhi reject ho jaati thi). Jo key daali, wahi save.
+NO_VERIFY = {"agentrouter"}
+
+
+_K_CFG = "provider_cfg"          # {provider: {"base":..,"model":..}} — TG se set
+
+
+def cfg(provider: str) -> Dict[str, str]:
+    return dict((_get(_K_CFG, {}) or {}).get(provider, {}))
+
+
+def set_cfg(provider: str, *, base: str = "", model: str = "") -> Dict[str, str]:
+    """TG panel se base URL / model badalna."""
+    data = _get(_K_CFG, {}) or {}
+    entry = dict(data.get(provider, {}))
+    if base:
+        entry["base"] = base.strip()
+    if model:
+        entry["model"] = model.strip()
+    data[provider] = entry
+    _set(_K_CFG, data)
+    return entry
+
+
+def base_url(provider: str) -> str:
+    """TG override > .env > default. '/v1' apne aap lag jaata hai."""
+    base = cfg(provider).get("base") or PROVIDERS[provider]["base"]
+    if provider == "agentrouter" and not cfg(provider).get("base"):
+        base = (getattr(config, "AGENTROUTER_BASE", "") or base).strip()
+    base = base.rstrip("/")
+    if not base.endswith("/v1"):
+        base += "/v1"
+    return base
+
 
 def _keys() -> Dict[str, List[Dict[str, Any]]]:
     data = _get(_K_KEYS, {}) or {}
@@ -122,7 +158,7 @@ def add_key(provider: str, key: str, verify: bool = True) -> Dict[str, Any]:
     if any(k["key"] == key for k in bucket):
         return {"ok": False, "message": "ye key pehle se added hai"}
 
-    if verify:
+    if verify and provider not in NO_VERIFY:
         ok, why = test_key(provider, key)
         if not ok:
             return {"ok": False, "message": f"key reject: {why}"}
@@ -169,6 +205,16 @@ def usage_report() -> str:
 
 # ------------------------------------------------------------ key pick
 
+def default_model(provider: str) -> str:
+    saved = cfg(provider).get("model")
+    if saved:
+        return saved
+    if provider == "agentrouter":
+        return (getattr(config, "AGENTROUTER_MODEL", "")
+                or PROVIDERS[provider]["default_model"])
+    return PROVIDERS[provider]["default_model"]
+
+
 def _cursor(provider: str) -> int:
     return int((_get(_K_CURSOR, {}) or {}).get(provider, 0))
 
@@ -211,7 +257,7 @@ def _bump(provider: str, index: int, dead: bool = False) -> None:
 
 def test_key(provider: str, key: str) -> tuple[bool, str]:
     try:
-        txt = _raw_call(provider, key, PROVIDERS[provider]["default_model"],
+        txt = _raw_call(provider, key, default_model(provider),
                         [{"role": "user", "content": "ping"}], 8, 0.0, timeout=25)
         return (True, "ok") if txt is not None else (False, "empty response")
     except requests.HTTPError as e:
@@ -225,11 +271,12 @@ def test_key(provider: str, key: str) -> tuple[bool, str]:
 def _raw_call(provider: str, key: str, model: str, messages: List[Dict[str, str]],
               max_tokens: int, temperature: float, timeout: int = 60) -> Optional[str]:
     meta = PROVIDERS[provider]
+    base = base_url(provider)
     if meta["style"] == "anthropic":
         system = "\n".join(m["content"] for m in messages if m["role"] == "system")
         chat = [m for m in messages if m["role"] != "system"]
         r = requests.post(
-            f"{meta['base']}/messages",
+            f"{base}/messages",
             headers={"x-api-key": key, "anthropic-version": "2023-06-01",
                      "content-type": "application/json",
                      "accept": "application/json", "user-agent": UA},
@@ -242,7 +289,7 @@ def _raw_call(provider: str, key: str, model: str, messages: List[Dict[str, str]
         return "".join(b.get("text", "") for b in blocks).strip()
 
     r = requests.post(
-        f"{meta['base']}/chat/completions",
+        f"{base}/chat/completions",
         headers={"Authorization": f"Bearer {key}", "content-type": "application/json",
                  "accept": "application/json", "user-agent": UA},
         json={"model": model, "messages": messages,
@@ -268,7 +315,7 @@ def call(provider: str, messages: List[Dict[str, str]], *, model: Optional[str] 
     """
     if provider not in PROVIDERS:
         return None
-    model = model or PROVIDERS[provider]["default_model"]
+    model = model or default_model(provider)
     bucket = list_keys(provider)
     for idx in _ordered_keys(provider):
         key = bucket[idx]["key"]
@@ -296,7 +343,8 @@ def has_keys(provider: str) -> bool:
 
 _ENV_MAP = {
     "groq": ("GROQ_API_KEYS", "GROQ_API_KEY"),
-    "agentrouter": ("AGENTROUTER_API_KEYS", "AGENTROUTER_API_KEY", "AGENTROUTER_KEY"),
+    "agentrouter": ("AGENTROUTER_API_KEYS", "AGENTROUTER_API_KEY", "AGENTROUTER_KEY",
+                    "ANTHROPIC_AUTH_TOKEN"),
     "anthropic": ("ANTHROPIC_API_KEYS", "ANTHROPIC_API_KEY"),
     "openrouter": ("OPENROUTER_API_KEYS", "OPENROUTER_API_KEY"),
 }
