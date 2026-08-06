@@ -13,7 +13,8 @@ import re
 from typing import Any, Dict, List, Optional
 
 import config
-from intelligence import api_pool, news, panel_store, runtime_state, tones
+from intelligence import (api_pool, news, panel_store, prompting,
+                          runtime_state, tones)
 from intelligence import user_facts
 from intelligence import llm_router_v7 as router
 from storage import database, drive_sync, people
@@ -59,7 +60,8 @@ def shutdown_v7() -> None:
 
 def on_incoming_message(*, username: str, text: str, thread_id: str,
                         ig_user_id: str = "",
-                        thread_title: Optional[str] = None) -> None:
+                        thread_title: Optional[str] = None,
+                        context: str = "") -> None:
     if not runtime_state.learning_on():
         return
     try:
@@ -67,7 +69,8 @@ def on_incoming_message(*, username: str, text: str, thread_id: str,
     except Exception:
         logger.exception("[BOOT] learning fail")
     try:
-        user_facts.learn(username, text)     # naam / ex / city / pasand yaad
+        # context = pichhli line (bot ka sawaal) -> naam kiska hai wo sahi lage
+        user_facts.learn(username, text, context)
     except Exception:
         logger.debug("[BOOT] fact learn fail", exc_info=True)
 
@@ -187,6 +190,10 @@ def build_reply_context(*, text: str, username: str, thread_id: str,
     ctx["route"] = router.classify(text)
     if news.is_news_query(text):
         ctx["route"] = "news"
+    if prompting.is_summary_query(text):
+        # "kya chal raha tha / kisne kya bola" -> smart model, poora scene
+        ctx["route"] = "facts"
+        ctx["summary"] = True
     # MALIK pe kabhi roast mode nahi
     if is_admin and ctx["route"] == "roast":
         ctx["route"] = "banter"
@@ -225,6 +232,15 @@ def build_reply_context(*, text: str, username: str, thread_id: str,
             "ek sharp punchline, 1-2 line max. Ratti-ratti maa-behen spam mat "
             "kar, wo bachkana lagta hai. Callback maar (pehle jo bola tha usi "
             "pe taana). Jo bola gaya wahi samajh ke jawab de.")
+    if ctx.get("summary"):
+        parts.append(
+            "SUMMARY MODE: isne poochha hai ki abhi tak kya chal raha tha. "
+            "Transcript padh ke point-wise bata kisne kya bola. Jiska asli "
+            "naam pata hai use naam se likh, warna @username se. Jhooth ya "
+            "khud ki banayi baat bilkul mat daal.")
+    parts.append(
+        "EMOTION SENSE: banda dukhi/serious lage to mazak-roast band, saath "
+        "de aur samajh ke bol. Masti chal rahi ho tabhi roast kar.")
     parts.append(
         "SOCH KE BOL: jo message aaya use dhyan se padh, usi ka jawab de. "
         "Topic se bahar utpatang, random ya copy-paste line mat bol. Agar "
