@@ -60,3 +60,14 @@ memory wapas aa jayegi.
 - Pehla login same IP pe kar jahan bot chalega, warna challenge aayega.
 - `IG_ALLOWED_THREADS` me sirf apni GC ki id daal de to bot bahar kahin
   reply nahi karega.
+
+## VPS pe update kaise kare (running bot)
+
+```bash
+cd /root/eve            # jahan repo clone hai
+git pull                # naye changes
+pip install -r requirements.txt   # (kabhi kabhi hi zaroori)
+systemctl restart eve   # ya: pkill -f "python main.py" && nohup python main.py &
+```
+Memory (eve.db) waise ki waisi rehti hai — kuch bhoolega nahi.
+Platform badalna ho (ig <-> tg) to `.env` me `PLATFORM=tg` kar ke restart.
