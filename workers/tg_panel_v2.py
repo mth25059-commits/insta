@@ -260,6 +260,8 @@ def _api_menu() -> List[List[Dict]]:
 def _provider_menu(p: str) -> List[List[Dict]]:
     keys = api_pool.list_keys(p)
     rows = [[_btn("➕ ADD KEY (ek ya 100)", f"api:add:{p}")]]
+    rows.append([_btn(f"🌐 Base: {api_pool.base_url(p)}", f"api:base:{p}")])
+    rows.append([_btn(f"🧠 Model: {api_pool.default_model(p)}", f"api:model:{p}")])
     for i, k in enumerate(keys):
         flag = "DEAD" if k.get("dead") else f"{k.get('used', 0)}/{api_pool.key_limit()}"
         rows.append([_btn(f"{i+1}. {api_pool.mask(k['key'])} [{flag}] ❌", f"api:del:{p}:{i}")])
@@ -340,9 +342,14 @@ def handle_callback(chat_id: int, data: str, user_id: Any,
         show("🚀 FORCE START — sab system ON, open reply mode.\n\n" + status_text(),
              main_menu())
         try:
-            from workers import ig_worker
-            ig_worker.mark_live_now()      # purane msg ka backlog reply na ho
-            send(chat_id, ig_worker.gc_report_text(), [_back()])
+            if config.PLATFORM == "tg":
+                from workers import tg_chat_worker as cw
+                cw.mark_live_now()
+                send(chat_id, cw.group_report(), [_back()])
+            else:
+                from workers import ig_worker as cw
+                cw.mark_live_now()   # purane msg ka backlog reply na ho
+                send(chat_id, cw.gc_report_text(), [_back()])
         except Exception as e:
             send(chat_id, f"⚠️ GC report fail: {e}", [_back()])
         return
@@ -378,7 +385,21 @@ def handle_callback(chat_id: int, data: str, user_id: Any,
         _ask(chat_id, "api_add",
              f"{api_pool.PROVIDERS[p]['label']} ki key(s) bhej.\n"
              "Ek line me ek key — 100 keys ek saath bhi chalengi.\n"
-             "Har key live test hogi, galat wali reject ho jayegi.",
+             + ("AgentRouter pe koi test nahi hota — jo key dega wahi save.\n"
+                if p in api_pool.NO_VERIFY else
+                "Har key live test hogi, galat wali reject ho jayegi.\n"),
+             {"provider": p}); return
+    if data.startswith("api:base:"):
+        p = data.split(":")[2]
+        _ask(chat_id, "api_base",
+             f"{api_pool.PROVIDERS[p]['label']} ka base URL bhej.\n"
+             "AgentRouter ka official: https://agentrouter.org",
+             {"provider": p}); return
+    if data.startswith("api:model:"):
+        p = data.split(":")[2]
+        _ask(chat_id, "api_model",
+             f"{api_pool.PROVIDERS[p]['label']} ka model bhej.\n"
+             "AgentRouter ka default: claude-opus-4-8",
              {"provider": p}); return
     if data.startswith("api:del:"):
         _, _, p, i = data.split(":")
@@ -530,6 +551,18 @@ def handle_pending(chat_id: int, text: str) -> bool:
         if bad:
             msg += "\n❌ Reject:\n" + "\n".join(bad[:10])
         send(chat_id, msg, _provider_menu(p["provider"]))
+        return True
+
+    if action in ("api_base", "api_model"):
+        _pending.pop(chat_id, None)
+        prov = p["provider"]
+        val = text.strip()
+        if action == "api_base":
+            api_pool.set_cfg(prov, base=val)
+        else:
+            api_pool.set_cfg(prov, model=val)
+        send(chat_id, f"✅ {prov} → base {api_pool.base_url(prov)} | model "
+                      f"{api_pool.default_model(prov)}", _provider_menu(prov))
         return True
 
     if action == "api_limit":
