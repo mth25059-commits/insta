@@ -48,6 +48,25 @@ def write_env(cfg: dict) -> None:
 
 
 # ----------------------------------------------------------------- steps
+def step_platform(cfg: dict) -> None:
+    print("\n=== 0/4  BOT KAHAN CHALEGA? ===")
+    print("  1) ig  -> Instagram group chat (default)")
+    print("  2) tg  -> Telegram group")
+    choice = input("Platform (ig/tg) [ig]: ").strip().lower() or "ig"
+    cfg["PLATFORM"] = "tg" if choice.startswith("t") else "ig"
+
+
+def step_tg_chat(cfg: dict) -> None:
+    print("\n=== TELEGRAM GROUP BOT ===")
+    print("  Ye control panel wale bot se ALAG bot hona chahiye.")
+    print("  @BotFather -> /newbot -> token. Phir BotFather me")
+    print("  /setprivacy -> Disable (warna group ke saare msg nahi dikhte).")
+    cfg["TG_CHAT_BOT_TOKEN"] = ask("Group wale bot ka token", secret=True)
+    cfg["TG_CHAT_ADMIN_IDS"] = ask("Tumhari Telegram user id (malik)")
+    cfg["TG_CHAT_ALLOWED_GROUPS"] = input(
+        "Group chat id (khali = sab group; @myidbot se milegi): ").strip()
+
+
 def step_telegram(cfg: dict) -> None:
     print("\n=== 1/4  TELEGRAM CONTROL PANEL ===")
     print("  @BotFather -> /newbot -> token copy karo")
@@ -199,7 +218,7 @@ def step_ai(cfg: dict) -> None:
     cfg["GROQ_API_KEYS"] = input("Groq keys (comma se, baad me TG panel se bhi daal sakte ho): ").strip()
     cfg["ANTHROPIC_API_KEY"] = input("Anthropic key (optional): ").strip()
     cfg["AGENTROUTER_KEY"] = input("AgentRouter key (optional): ").strip()
-    cfg["AGENTROUTER_BASE"] = "https://agentrouter.org/v1"
+    cfg["AGENTROUTER_BASE"] = "https://agentrouter.org"
     cfg["AGENTROUTER_MODEL"] = "claude-opus-4-8"
 
 
@@ -215,8 +234,12 @@ def main() -> int:
         return 0
 
     cfg: dict = {}
+    step_platform(cfg)
     step_telegram(cfg)
-    step_instagram(cfg)
+    if cfg.get("PLATFORM") == "tg":
+        step_tg_chat(cfg)
+    else:
+        step_instagram(cfg)
     step_drive(cfg)
     step_ai(cfg)
     if _FOLDER_CACHE.get("GDRIVE_FOLDER_ID"):
