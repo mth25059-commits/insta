@@ -84,14 +84,30 @@ def facts(username: str) -> Dict[str, str]:
         return {}
 
 
+_LABEL = {
+    "naam": "iska apna naam",
+    "ex_naam": "iske EX ka naam (iska apna naam NAHI)",
+    "gf_naam": "iski gf/bf ka naam",
+    "dost_naam": "iske dost ka naam",
+    "city": "iska sheher",
+    "padhai": "padhai",
+    "kaam": "kaam/job",
+    "pasand": "isko pasand",
+    "nafrat": "isko pasand nahi",
+    "mood": "iska mood/dukh",
+}
+
+
 def block(username: str) -> str:
     f = facts(username)
     if not f:
         return ""
-    lines = [f"- {k}: {v}" for k, v in f.items()]
+    lines = [f"- {_LABEL.get(k, k)}: {v}" for k, v in f.items()]
     return (f"@{_u(username)} KE BAARE ME JO PEHLE PATA CHALA (ye yaad hai "
-            "tujhe, isko dhyan me rakh ke baat kar, ulta mat poochh):\n"
+            "tujhe, isko dhyan me rakh ke baat kar, ulta mat poochh; kisi "
+            "aur ka naam ise mat chipka):\n"
             + "\n".join(lines))
+
 
 
 def forget(username: str, key: str = "") -> int:
@@ -106,15 +122,33 @@ def forget(username: str, key: str = "") -> int:
 
 
 # ------------------------------------------------------- regex learning
+#
+# SABSE BADI GALTI JO PEHLE HOTI THI: kisi ne ex ka naam bataya aur bot ne
+# use bande ka apna naam maan liya. Ab har naam ke saath "kiska naam hai" bhi
+# dekha jaata hai (apna / ex / gf / dost).
 
-_NAME = [
-    re.compile(r"\b(?:mera|mere)\s+naam\s+([A-Za-z][A-Za-z ]{1,20}?)\s*(?:hai|h|he)?\b", re.I),
-    re.compile(r"\bnaam\s+(?:to\s+)?([A-Za-z][A-Za-z]{1,18})\s+(?:hai|h|he)\b", re.I),
-    re.compile(r"\b(?:my name is|i am|i'm|myself)\s+([A-Za-z][A-Za-z]{1,18})\b", re.I),
-    re.compile(r"^([A-Za-z][a-z]{2,15})\s+naam\s+(?:hai|h)\b", re.I),
+_SELF_NAME = [
+    re.compile(r"\b(?:mera|mere)\s+naam\s+([A-Za-z][A-Za-z]{2,18})\b", re.I),
+    re.compile(r"\b(?:my name is|i am|i'm|myself)\s+([A-Za-z][A-Za-z]{2,18})\b", re.I),
+    re.compile(r"\bmujhe\s+([A-Za-z][A-Za-z]{2,18})\s+(?:bulate|kehte|bolte)\b", re.I),
 ]
 _STOPNAMES = {"kya", "nahi", "hai", "bhai", "yaar", "sorry", "good", "bad",
-              "eve", "babu", "the", "a", "an", "not", "your", "tumhara"}
+              "eve", "babu", "the", "a", "an", "not", "your", "tumhara",
+              "uska", "iska", "mera", "tera", "naam", "pata", "acha", "theek"}
+
+# kis rishtey ki baat chal rahi hai -> naam usi ke khaate me jaayega
+_REL = [
+    ("ex_naam", re.compile(r"\b(ex|breakup|break\s?up|purani|puraana wala)\b", re.I)),
+    ("gf_naam", re.compile(r"\b(gf|girlfriend|bf|boyfriend|crush|gf ka|bf ka)\b", re.I)),
+    ("dost_naam", re.compile(r"\b(dost|friend|yaar ka|bestie|bhai ka)\b", re.I)),
+]
+
+# "uska naam shivam tha" jaise line -> kisi AUR ka naam
+_OTHER_NAME = re.compile(
+    r"\b(?:uska|us ka|uski|iska|is ka|unka)\s+naam\s+([A-Za-z][A-Za-z]{2,18})\b", re.I)
+# akela naam (jaise bot ne poochha 'kya naam tha' aur user ne 'shivam' bola)
+_BARE_NAME = re.compile(r"^([A-Za-z][a-z]{2,15})[\s.!]*$")
+_ASKED_NAME = re.compile(r"\bnaam\b.*\b(kya|tha|hai|batao|thi)\b|what.*name", re.I)
 
 _PATTERNS = [
     ("padhai",  re.compile(r"\b(?:main|mai|me)\s+(\w+(?:\s+\w+)?)\s+(?:me|mein)\s+padh", re.I)),
@@ -126,18 +160,55 @@ _PATTERNS = [
 ]
 
 
-def learn(username: str, text: str) -> None:
-    """Har incoming message pe — sasta, bina LLM ke."""
+def _clean_name(raw: str) -> str:
+    name = (raw or "").strip().title()
+    return name if len(name) >= 3 and name.lower() not in _STOPNAMES else ""
+
+
+def _relation_key(*texts: str) -> str:
+    """Aas-paas ki baat dekh ke tay karo naam kiska hai."""
+    blob = " ".join(t or "" for t in texts)
+    for key, rx in _REL:
+        if rx.search(blob):
+            return key
+    return ""
+
+
+def learn(username: str, text: str, context: str = "") -> None:
+    """
+    Har incoming message pe — sasta, bina LLM ke.
+    `context` = pichhli 1-2 line (bot ka sawaal + user ki purani baat), isse
+    pata chalta hai naam kiska bataya ja raha hai.
+    """
     t = (text or "").strip()
     if not t or len(t) > 400:
         return
-    for rx in _NAME:
-        m = rx.search(t)
-        if m:
-            name = m.group(1).strip().title()
-            if name.lower() not in _STOPNAMES and len(name) >= 3:
-                remember(username, "naam", name)
-            break
+
+    rel = _relation_key(t, context)
+
+    # 1) "uska naam X" -> pakka kisi aur ka
+    m = _OTHER_NAME.search(t)
+    if m:
+        name = _clean_name(m.group(1))
+        if name:
+            remember(username, rel or "dost_naam", name)
+    else:
+        # 2) "mera naam X" -> apna naam (chahe rishtey ki baat ho rahi ho)
+        for rx in _SELF_NAME:
+            mm = rx.search(t)
+            if mm:
+                name = _clean_name(mm.group(1))
+                if name:
+                    remember(username, "naam", name)
+                break
+        else:
+            # 3) sirf naam bheja (bot ne poochha tha) -> context decide karega
+            bare = _BARE_NAME.match(t)
+            if bare and _ASKED_NAME.search(context or ""):
+                name = _clean_name(bare.group(1))
+                if name:
+                    remember(username, rel or ("naam" if not rel else rel), name)
+
     for key, rx in _PATTERNS:
         m = rx.search(t)
         if m:
@@ -147,12 +218,19 @@ def learn(username: str, text: str) -> None:
 # --------------------------------------------------------- LLM learning
 
 _EXTRACT_SYS = (
-    "Tu ek memory extractor hai. Diye gaye chat exchange me se user ke baare "
-    "me PAKKI, kaam ki, lambe samay tak yaad rakhne layak baatein nikaal. "
-    "Sirf JSON de: {\"facts\": {\"key\": \"value\"}}. Key chhoti english me "
-    "(naam, ex, gf, city, padhai, kaam, pasand, mood, plan). Agar kuch nayi "
-    "pakki baat nahi hai to {\"facts\": {}} de. Guess mat kar."
+    "Tu ek memory extractor hai. Diye gaye chat exchange me se USER ke baare "
+    "me pakki, lambe samay tak yaad rakhne layak baatein nikaal.\n"
+    "SABSE ZAROORI: naam kiska hai ye galat mat kar. Agar user apna naam "
+    "bataye to key 'naam'. Agar wo apne EX ka naam bataye to key 'ex_naam'. "
+    "gf/bf ka naam -> 'gf_naam'. dost ka -> 'dost_naam'. Shak ho to naam "
+    "bilkul mat likh.\n"
+    "Sirf JSON de: {\"facts\": {\"key\": \"value\"}}. Baaki keys chhoti "
+    "english me (city, padhai, kaam, pasand, mood, plan). Kuch nayi pakki "
+    "baat na ho to {\"facts\": {}}. Guess mat kar."
 )
+
+_ALLOWED = {"naam", "ex_naam", "gf_naam", "dost_naam", "city", "padhai",
+            "kaam", "pasand", "nafrat", "mood", "plan"}
 
 
 def _extract(username: str, convo: str) -> None:
@@ -167,8 +245,9 @@ def _extract(username: str, convo: str) -> None:
             return
         data = json.loads(m.group(0))
         for k, v in (data.get("facts") or {}).items():
-            if isinstance(v, (str, int, float)):
-                remember(username, str(k), str(v))
+            k = str(k).strip().lower()
+            if k in _ALLOWED and isinstance(v, (str, int, float)):
+                remember(username, k, str(v))
     except Exception:
         logger.debug("[FACTS] llm extract fail", exc_info=True)
 
