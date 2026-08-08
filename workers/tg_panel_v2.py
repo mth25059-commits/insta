@@ -285,10 +285,10 @@ def _pref_provider_menu(task: str) -> List[List[Dict]]:
 
 
 def _tone_menu() -> List[List[Dict]]:
-    cur = tones.get_tone()
+    cur = tones.get_tones()
     items = list(tones.TONES)
-    rows = [[_btn(("✅ " if items[i] == cur else "") + items[i], f"tone:set:{items[i]}"),
-             *( [_btn(("✅ " if items[i+1] == cur else "") + items[i+1], f"tone:set:{items[i+1]}")]
+    rows = [[_btn(("✅ " if items[i] in cur else "") + items[i], f"tone:set:{items[i]}"),
+             *( [_btn(("✅ " if items[i+1] in cur else "") + items[i+1], f"tone:set:{items[i+1]}")]
                 if i + 1 < len(items) else [])]
             for i in range(0, len(items), 2)]
     rows.append([_btn(("🔒 FILTER ON" if tones.filter_on() else "🔓 UNFILTERED"),
@@ -427,8 +427,9 @@ def handle_callback(chat_id: int, data: str, user_id: Any,
     if data == "tone:menu":
         show("🎭 TONE\n\n" + tones.report(), _tone_menu()); return
     if data.startswith("tone:set:"):
-        tones.set_tone(data.split(":")[2])
-        show("🎭 TONE\n\n" + tones.report(), _tone_menu()); return
+        tones.toggle_tone(data.split(":")[2])   # multi-select: on/off
+        show("🎭 TONE (ek saath 3 tak chun sakte ho)\n\n" + tones.report(),
+             _tone_menu()); return
     if data == "tone:togglefilter":
         tones.set_filter(not tones.filter_on())
         show(tones.report() + "\n\n" + status_text(), main_menu()); return
