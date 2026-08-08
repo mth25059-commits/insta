@@ -358,7 +358,16 @@ def call(provider: str, messages: List[Dict[str, str]], *, model: Optional[str] 
                 return out
         except requests.HTTPError as e:
             code = e.response.status_code if e.response is not None else 0
+            body = (e.response.text[:200] if e.response is not None else "")
             dead = code in (401, 403)
+            # content-blocked = content ka masla hai, key ka nahi (AgentRouter
+            # Hindi/Hinglish block karta hai). Baaki keys pe bhi wahi 400 aayega,
+            # isliye turant nikal jao -> caller seedha fallback provider (groq)
+            # se reply le lega. Warna 10 keys = 10 bekaar call + delay.
+            if code == 400 and "content-blocked" in body:
+                logger.info("[API] %s content-blocked -> fallback provider", provider)
+                _bump(provider, idx)
+                return None
             logger.warning("[API] %s key#%s HTTP %s -> next key", provider, idx + 1, code)
             _bump(provider, idx, dead=dead)
         except Exception as e:
