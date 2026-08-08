@@ -76,14 +76,28 @@ _REACT_MAP = {
 
 
 def react(chat_id: str, message_id: int, emoji: str) -> None:
-    """Ek message pe emoji reaction laga do (best-effort, fail-safe)."""
-    if not message_id or emoji not in _REACT_POOL.values():
+    """Ek message pe emoji reaction laga do (best-effort, par chup-chaap nahi).
+
+    Telegram error pe HTTP 400 + {"ok": false} deta hai — _api() usme exception
+    nahi phenkta, isliye response khud check karna padta hai. Warna react fail
+    hota rahega aur log me kuch nahi aayega.
+    """
+    if not message_id:
+        return
+    if emoji not in _REACT_POOL.values():
+        logger.warning("[TG-CHAT] react skip: %r allowed list me nahi", emoji)
         return
     try:
-        _api("setMessageReaction", chat_id=chat_id, message_id=message_id,
-             reaction=[{"type": "emoji", "emoji": emoji}])
+        res = _api("setMessageReaction", chat_id=chat_id, message_id=message_id,
+                   reaction=[{"type": "emoji", "emoji": emoji}])
     except Exception as e:
-        logger.debug("[TG-CHAT] react fail: %s", e)
+        logger.warning("[TG-CHAT] react network fail: %s", e)
+        return
+    if not res.get("ok"):
+        logger.warning("[TG-CHAT] react fail %s -> %s", emoji,
+                       res.get("description") or res)
+    else:
+        logger.info("[TG-CHAT] react %s on msg %s", emoji, message_id)
 
 
 _SAD_RE = re.compile(
@@ -94,17 +108,21 @@ _RECALL_RE = re.compile(
     r"maine\s+btaya|tune\s+bola)\b", re.I)
 
 
-def _pick_react(text: str, route: str) -> Optional[str]:
-    """User ke text + route ke mood se ek react emoji chuno (ya None).
-
-    Dukh/recall wali baat pe hamesha react (wahin pe react ka matlab banta
-    hai). Normal bakchodi pe kabhi-kabhi, warna har message pe emoji spam.
-    """
+def _mood_react(text: str) -> Optional[str]:
+    """Sirf strong feeling — dukh ya purani baat ka recall. Warna None."""
     t = text or ""
     if _SAD_RE.search(t):
         return _REACT_MAP["sad"]            # 😢 dukh/miss/yaad wali baat
     if _RECALL_RE.search(t):
         return _REACT_MAP["recall"]         # ❤ purani baat recall
+    return None
+
+
+def _pick_react(text: str, route: str) -> Optional[str]:
+    """Reply bhejte waqt ka react. Mood wala pehle hi lag chuka hota hai,
+    isliye yahan sirf route ka halka react — wo bhi kabhi-kabhi."""
+    if _mood_react(text):
+        return None                         # duplicate react mat karo
     if random.random() > REACT_CHANCE:
         return None
     return _REACT_MAP.get(route)            # roast🔥 facts🤔 debate🫡 banter😁
@@ -184,6 +202,13 @@ def handle_message(m: Dict[str, Any]) -> None:
 
     if (m.get("date") or 0) < _live_since - 5:
         return                                   # purana backlog: sirf seekha
+
+    # Dukh/recall wali baat pe react HAMESHA — chahe bot reply kare ya na kare.
+    # Insaan bhi kisi ke "sad hu" pe kam se kam react to karta hi hai. Pehle ye
+    # reply ke andar tha, isliye bot chup raha to react bhi nahi hota tha.
+    mood_emoji = _mood_react(text)
+    if mood_emoji:
+        react(chat_id, msg_id, mood_emoji)
 
     bot_user = (me().get("username") or "").lower()
     rep = m.get("reply_to_message") or {}
