@@ -49,11 +49,16 @@ PROVIDERS: Dict[str, Dict[str, Any]] = {
                    "openai/gpt-oss-120b", "qwen/qwen3-32b"],
     },
     "agentrouter": {
+        # AgentRouter Claude ke liye Anthropic-compatible chahiye:
+        #   POST {base}/v1/messages  (base = https://agentrouter.org, /v1 khud lagta hai)
+        #   Authorization: Bearer <key>   +   User-Agent: claude-cli ...  +  x-app: cli
+        # Bina in headers ke wo "unauthorized client detected" (401) deta hai.
+        # Sirf claude-opus-4-8 hi abhi live hai (4-6/4-7/sonnet = "no channel").
         "label": "AgentRouter (Opus 4.8)",
         "base": "https://agentrouter.org",
-        "style": "openai",
+        "style": "agentrouter",
         "default_model": "claude-opus-4-8",
-        "models": ["claude-opus-4-8", "claude-sonnet-4-5", "gpt-5.5"],
+        "models": ["claude-opus-4-8"],
     },
     "anthropic": {
         "label": "Anthropic (direct)",
@@ -272,6 +277,33 @@ def _raw_call(provider: str, key: str, model: str, messages: List[Dict[str, str]
               max_tokens: int, temperature: float, timeout: int = 60) -> Optional[str]:
     meta = PROVIDERS[provider]
     base = base_url(provider)
+
+    # AgentRouter Claude: Anthropic /v1/messages, par auth Bearer + Claude Code
+    # jaise headers chahiye (warna 401 "unauthorized client detected").
+    if meta["style"] == "agentrouter":
+        system = "\n".join(m["content"] for m in messages if m["role"] == "system")
+        chat = [m for m in messages if m["role"] != "system"]
+        r = requests.post(
+            f"{base}/messages",
+            headers={"Authorization": f"Bearer {key}",
+                     "anthropic-version": "2023-06-01",
+                     "content-type": "application/json",
+                     "accept": "application/json",
+                     "x-app": "cli",
+                     "user-agent": "claude-cli/1.0.0 (external, cli)"},
+            json={"model": model, "max_tokens": max_tokens, "temperature": temperature,
+                  "system": system or None, "messages": chat},
+            timeout=timeout,
+        )
+        r.raise_for_status()
+        try:
+            blocks = r.json().get("content", [])
+        except ValueError:
+            raise RuntimeError(f"non-JSON from agentrouter (WAF?): {r.text[:120]}")
+        # thinking + text dono blocks aate hain — sirf text chahiye
+        return "".join(b.get("text", "") for b in blocks
+                       if b.get("type") == "text").strip()
+
     if meta["style"] == "anthropic":
         system = "\n".join(m["content"] for m in messages if m["role"] == "system")
         chat = [m for m in messages if m["role"] != "system"]

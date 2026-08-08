@@ -30,11 +30,15 @@ TASK_LABEL = {
 }
 
 DEFAULTS: Dict[str, Dict[str, Any]] = {
+    # Groq = free + fast -> normal bakchodi/roast, sabse zyada traffic yahin.
     "banter": {"provider": "groq", "model": None, "fallback": ["agentrouter"]},
     "roast": {"provider": "groq", "model": None, "fallback": ["agentrouter"]},
-    "debate": {"provider": "agentrouter", "model": "claude-opus-4-8", "fallback": ["anthropic", "groq"]},
-    "facts": {"provider": "agentrouter", "model": "claude-opus-4-8", "fallback": ["anthropic", "groq"]},
-    "help": {"provider": "agentrouter", "model": "claude-opus-4-8", "fallback": ["anthropic", "groq"]},
+    # Important/knowledge -> pehle AgentRouter (Opus 4.8, best quality).
+    # AgentRouter Hindi/Hinglish ko "content-blocked" (400) deta hai, isliye
+    # groq ko fallback me PEHLE rakha -> block aate hi turant groq se reply.
+    "debate": {"provider": "agentrouter", "model": "claude-opus-4-8", "fallback": ["groq"]},
+    "facts": {"provider": "agentrouter", "model": "claude-opus-4-8", "fallback": ["groq"]},
+    "help": {"provider": "agentrouter", "model": "claude-opus-4-8", "fallback": ["groq"]},
 }
 
 _K = "task_pref"

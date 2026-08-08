@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import logging
 import random
+import re
 import sys
 import threading
 import time
@@ -58,6 +59,48 @@ def me() -> Dict[str, Any]:
         if _me.get("username"):
             config.TG_BOT_USERNAME = _me["username"]
     return _me
+
+
+# Telegram free-plan par ye emojis hi react ke liye allowed hain.
+_REACT_POOL = {
+    "love": "❤", "fire": "🔥", "laugh": "😁", "sad": "😢",
+    "wow": "😱", "ok": "👍", "clap": "👏", "think": "🤔",
+    "salute": "🫡", "party": "🎉",
+}
+# Mood/route -> react emoji. Recall/yaad, sad baat, roast sab ka apna react.
+_REACT_MAP = {
+    "recall": "❤", "memory": "❤", "sad": "😢", "roast": "🔥",
+    "facts": "🤔", "debate": "🫡", "news": "🔥", "banter": "😁",
+}
+
+
+def react(chat_id: str, message_id: int, emoji: str) -> None:
+    """Ek message pe emoji reaction laga do (best-effort, fail-safe)."""
+    if not message_id or emoji not in _REACT_POOL.values():
+        return
+    try:
+        _api("setMessageReaction", chat_id=chat_id, message_id=message_id,
+             reaction=[{"type": "emoji", "emoji": emoji}])
+    except Exception as e:
+        logger.debug("[TG-CHAT] react fail: %s", e)
+
+
+_SAD_RE = re.compile(
+    r"\b(sad|dukh|rona|ro raha|udaas|akela|depress|miss|breakup|"
+    r"tut gaya|dard|rula|marne|thak gaya)\b|yaad\s+aa?\b", re.I)
+_RECALL_RE = re.compile(
+    r"\b(yaad\s+(hai|aya|ayi|aaya|dila)|recall|remember|pehle\s+bola|"
+    r"maine\s+btaya|tune\s+bola)\b", re.I)
+
+
+def _pick_react(text: str, route: str) -> Optional[str]:
+    """User ke text + route ke mood se ek react emoji chuno (ya None)."""
+    t = text or ""
+    if _SAD_RE.search(t):
+        return _REACT_MAP["sad"]            # 😢 dukh/miss/yaad wali baat
+    if _RECALL_RE.search(t):
+        return _REACT_MAP["recall"]         # ❤ purani baat recall
+    return _REACT_MAP.get(route)            # roast🔥 facts🤔 debate🫡 banter😁
 
 
 def _allowed(chat_id: str) -> bool:
@@ -189,6 +232,9 @@ def handle_message(m: Dict[str, Any]) -> None:
     if reply:
         reply = reply.strip().strip('"')
         send_reply(chat_id, reply, msg_id, fast=direct)
+        emoji = _pick_react(text, route)         # mood/recall ke hisaab se react
+        if emoji:
+            react(chat_id, msg_id, emoji)
         try:
             user_facts.learn_async(
                 username,
