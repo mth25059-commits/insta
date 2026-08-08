@@ -95,6 +95,7 @@ _LABEL = {
     "pasand": "isko pasand",
     "nafrat": "isko pasand nahi",
     "mood": "iska mood/dukh",
+    "gender": "ladki/ladka",
 }
 
 
@@ -156,6 +157,7 @@ _PATTERNS = [
     ("kaam",    re.compile(r"\b(?:main|mai)\s+([\w ]{3,25})\s+(?:ka kaam|job)\s+karta\b", re.I)),
     ("pasand",  re.compile(r"\bmujhe\s+([\w ]{3,25})\s+(?:pasand|acha lagta|achi lagti)\b", re.I)),
     ("nafrat",  re.compile(r"\bmujhe\s+([\w ]{3,25})\s+(?:pasand nahi|nafrat)\b", re.I)),
+    ("gender",  re.compile(r"\b(?:main|mai|me|mein)\s+(ladki|larki|girl|ladka|larka|boy)\s*(?:hu|hoon|hun|h|hai)?\b", re.I)),
     ("mood",    re.compile(r"\b(?:mujhe|mai|main)\s+(?:apni|apne)?\s*(ex|breakup|gf|bf)\b.{0,25}(?:yaad|miss)", re.I)),
 ]
 
