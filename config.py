@@ -73,7 +73,8 @@ OPENROUTER_API_KEYS = _get("OPENROUTER_API_KEYS")
 GOOGLE_SERVICE_ACCOUNT_JSON = _get("GOOGLE_SERVICE_ACCOUNT_JSON")
 GDRIVE_FOLDER_ID = _get("GDRIVE_FOLDER_ID")
 GDRIVE_FOLDER_NAME = _get("GDRIVE_FOLDER_NAME", "EveBrain")
-DRIVE_SYNC_INTERVAL = int(_get("DRIVE_SYNC_INTERVAL", "900") or 900)
+# har 3 ghante Drive pe eve.db auto-backup (manual kuch nahi karna)
+DRIVE_SYNC_INTERVAL = int(_get("DRIVE_SYNC_INTERVAL", "10800") or 10800)
 
 # ------------------------------------------------------------- platform
 # Bot kis jagah chalega: "ig" (Instagram GC) ya "tg" (Telegram group).
