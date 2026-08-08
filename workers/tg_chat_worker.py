@@ -37,6 +37,7 @@ _live_since: float = time.time()
 
 OPEN_COOLDOWN = 25.0
 OPEN_CHANCE = 0.55
+REACT_CHANCE = 0.25          # normal chat pe itni baar hi react (spam se bachne ko)
 _last_open: Dict[str, float] = {}
 
 
@@ -87,19 +88,25 @@ def react(chat_id: str, message_id: int, emoji: str) -> None:
 
 _SAD_RE = re.compile(
     r"\b(sad|dukh|rona|ro raha|udaas|akela|depress|miss|breakup|"
-    r"tut gaya|dard|rula|marne|thak gaya)\b|yaad\s+aa?\b", re.I)
+    r"tut gaya|dard|rula|marne|thak gaya)\b|yaad\s+a\w*", re.I)
 _RECALL_RE = re.compile(
-    r"\b(yaad\s+(hai|aya|ayi|aaya|dila)|recall|remember|pehle\s+bola|"
+    r"\b(yaad\s+(hai|dila|rakh)|recall|remember|pehle\s+bola|"
     r"maine\s+btaya|tune\s+bola)\b", re.I)
 
 
 def _pick_react(text: str, route: str) -> Optional[str]:
-    """User ke text + route ke mood se ek react emoji chuno (ya None)."""
+    """User ke text + route ke mood se ek react emoji chuno (ya None).
+
+    Dukh/recall wali baat pe hamesha react (wahin pe react ka matlab banta
+    hai). Normal bakchodi pe kabhi-kabhi, warna har message pe emoji spam.
+    """
     t = text or ""
     if _SAD_RE.search(t):
         return _REACT_MAP["sad"]            # 😢 dukh/miss/yaad wali baat
     if _RECALL_RE.search(t):
         return _REACT_MAP["recall"]         # ❤ purani baat recall
+    if random.random() > REACT_CHANCE:
+        return None
     return _REACT_MAP.get(route)            # roast🔥 facts🤔 debate🫡 banter😁
 
 
@@ -231,10 +238,11 @@ def handle_message(m: Dict[str, Any]) -> None:
     )
     if reply:
         reply = reply.strip().strip('"')
-        send_reply(chat_id, reply, msg_id, fast=direct)
-        emoji = _pick_react(text, route)         # mood/recall ke hisaab se react
+        # Mood/recall ke hisaab se user ke message pe react (❤🔥😢🤔…), phir reply.
+        emoji = _pick_react(text, route)
         if emoji:
             react(chat_id, msg_id, emoji)
+        send_reply(chat_id, reply, msg_id, fast=direct)
         try:
             user_facts.learn_async(
                 username,
