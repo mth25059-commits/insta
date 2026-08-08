@@ -141,6 +141,10 @@ def handle_message(m: Dict[str, Any]) -> None:
                           and ((rep.get("from") or {}).get("username", "").lower()
                                == bot_user))
 
+    q_text = str(rep.get("text") or "").strip()
+    q_author = "" if replied_to_bot else str(
+        (rep.get("from") or {}).get("username") or "")
+
     history = database.recent_messages(chat_id, limit=prompting.SUMMARY_LIMIT)
     user_past = database.user_messages(chat_id, username,
                                        limit=prompting.USER_PAST_LIMIT)
@@ -177,7 +181,8 @@ def handle_message(m: Dict[str, Any]) -> None:
         ctx["system_extra"],
         prompting.build_prompt(ctx=ctx, username=username, text=text,
                                history=history, user_past=user_past,
-                               is_question=router.is_question(text)),
+                               is_question=router.is_question(text),
+                               quoted_text=q_text, quoted_author=q_author),
         max_tokens=320 if smart else 220,
         temperature=0.5 if smart else 0.95,
     )
