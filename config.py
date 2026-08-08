@@ -69,6 +69,11 @@ ANTHROPIC_AUTH_TOKEN = _get("ANTHROPIC_AUTH_TOKEN")
 OPENROUTER_API_KEY = _get("OPENROUTER_API_KEY")
 OPENROUTER_API_KEYS = _get("OPENROUTER_API_KEYS")
 
+# Ek API call ka max wait (sec). Timeout ke baad hi fallback provider (groq)
+# try hota hai, isliye ye jitna bada utni der user ko intezaar. GC ke liye
+# 25-30 practical hai; 120 = Opus ko poora mauka, par slow case me lamba wait.
+API_TIMEOUT = int(_get("API_TIMEOUT", "120") or 120)
+
 # --------------------------------------------------------------- drive
 GOOGLE_SERVICE_ACCOUNT_JSON = _get("GOOGLE_SERVICE_ACCOUNT_JSON")
 GDRIVE_FOLDER_ID = _get("GDRIVE_FOLDER_ID")

@@ -39,6 +39,11 @@ UA = ("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 "
 
 DEFAULT_KEY_LIMIT = 2100          # per key request quota, TG se badal sakte ho
 
+# Har API call ka max wait. Timeout hone par hi fallback provider (groq) try
+# hota hai — matlab ye jitna bada, utni der user ko intezaar. .env me
+# API_TIMEOUT=25 daal ke chhota kar sakte ho (GC me 25-30s zyada practical hai).
+API_TIMEOUT = int(getattr(config, "API_TIMEOUT", 0) or 120)
+
 PROVIDERS: Dict[str, Dict[str, Any]] = {
     "groq": {
         "label": "Groq",
@@ -274,9 +279,10 @@ def test_key(provider: str, key: str) -> tuple[bool, str]:
 
 
 def _raw_call(provider: str, key: str, model: str, messages: List[Dict[str, str]],
-              max_tokens: int, temperature: float, timeout: int = 60) -> Optional[str]:
+              max_tokens: int, temperature: float, timeout: int = 0) -> Optional[str]:
     meta = PROVIDERS[provider]
     base = base_url(provider)
+    timeout = timeout or API_TIMEOUT
 
     # AgentRouter Claude: Anthropic /v1/messages, par auth Bearer + Claude Code
     # jaise headers chahiye (warna 401 "unauthorized client detected").
