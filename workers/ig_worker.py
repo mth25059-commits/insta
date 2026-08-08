@@ -248,7 +248,9 @@ def handle_message(msg: Dict[str, Any]) -> None:
         system,
         prompting.build_prompt(ctx=ctx, username=username, text=text,
                                history=history, user_past=user_past,
-                               is_question=router.is_question(text)),
+                               is_question=router.is_question(text),
+                               quoted_text=str(msg.get("quoted_text") or ""),
+                               quoted_author=str(msg.get("quoted_author") or "")),
         max_tokens=320 if smart else 220,
         temperature=0.5 if smart else 0.95,
     )
@@ -305,6 +307,7 @@ def _fetch_new() -> List[Dict[str, Any]]:
             rep = (getattr(m, "replied_to_message", None)
                    or getattr(m, "reply", None)
                    or getattr(m, "replied_to", None))
+            q_text, q_author = "", ""
             if rep is not None:
                 r_uid = str(getattr(rep, "user_id", "") or "")
                 r_user = by_id.get(r_uid)
@@ -315,6 +318,8 @@ def _fetch_new() -> List[Dict[str, Any]]:
                 if not replied_to_bot and r_text:
                     # id/user na mile to bhi: kya wo line bot ne hi bheji thi?
                     replied_to_bot = database.was_bot_text(tid, r_text)
+                q_text = str(getattr(rep, "text", "") or "").strip()
+                q_author = "" if replied_to_bot else r_name
             out.append({
                 "id": str(m.id),
                 "thread_id": tid,
@@ -324,6 +329,8 @@ def _fetch_new() -> List[Dict[str, Any]]:
                 "obj": m,
                 "ts": getattr(m, "timestamp", None),
                 "replied_to_bot": replied_to_bot,
+                "quoted_text": q_text,
+                "quoted_author": q_author,
                 "text": m.text,
             })
     return out
