@@ -32,11 +32,24 @@ _FACTUAL = re.compile(
     r"population|capital|formula|code|error|padhai|exam|syllabus)\b", re.I)
 
 
+_KNOWLEDGE = re.compile(
+    r"(\b(what|who|why|how|when|which)\s+(is|are|was|does|do|did|to)\b|"
+    r"\bkya\s+(hai|hota|hoti|h)\b|\bkaise\s+(hota|kaam|banta|karte|kare)\b|"
+    r"\bkyun?\s+hota\b|\bmatlab\b|\bmeaning\b|\bdefine\b|\bexplain\b|"
+    r"\bfull\s*form\b|\bdifference\b|\bantar\b|\bsamjha\s*de\b)", re.I)
+
+
+def is_knowledge(text: str) -> bool:
+    return bool(_KNOWLEDGE.search(text or ""))
+
+
 def classify(text: str) -> str:
     """Kya poochha gaya hai — usi hisaab se dimaag chuno."""
     t = text or ""
     if _DEBATE.search(t) or len(t.split()) > 35:
         return "debate"
+    if _KNOWLEDGE.search(t):
+        return "facts"          # general knowledge sawaal -> smart model
     if _ROAST.search(t):
         return "roast"
     # sacha sawal (sirf gaali nahi) -> smart model, taaki bewakoofi na bole
