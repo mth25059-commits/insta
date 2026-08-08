@@ -43,11 +43,28 @@ def is_knowledge(text: str) -> bool:
     return bool(_KNOWLEDGE.search(text or ""))
 
 
+# Ye sirf haal-chaal / bakchodi hai, koi sawaal nahi — chahe "how/kya" aaye.
+# Bina iske "how are you" bhi facts ban ke PAID Opus pe chala jaata tha, aur
+# "kya scene hai bhai" AgentRouter pe jaake content-block khaata tha.
+_SMALLTALK = re.compile(
+    r"^\s*(hi|hey|hello|yo|oye|oi|hola|salam|namaste|gm|gn|good\s+(morning|night|"
+    r"evening|afternoon)|kya\s+(scene|haal|chal\s*raha|kar\s*raha|hua|bol)|"
+    r"how\s+(are|r)\s+(you|u)|whats?\s*up|wassup|sup|kaise\s+ho|kaisa\s+hai|"
+    r"kaisi\s+ho|aur\s+(bata|sunao|kya)|thik|theek|ok|okay|hmm+|acha|achha|"
+    r"lol|haha+|bruh|bhai|yaar)\b[\s\w]{0,12}[?!.]*\s*$", re.I)
+
+
+def is_smalltalk(text: str) -> bool:
+    return bool(_SMALLTALK.match(text or ""))
+
+
 def classify(text: str) -> str:
     """Kya poochha gaya hai — usi hisaab se dimaag chuno."""
     t = text or ""
     if _DEBATE.search(t) or len(t.split()) > 35:
         return "debate"
+    if _SMALLTALK.match(t):
+        return "banter"         # haal-chaal -> sasta+fast groq, paisa mat jalao
     if _KNOWLEDGE.search(t):
         return "facts"          # general knowledge sawaal -> smart model
     if _ROAST.search(t):
